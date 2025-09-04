@@ -2,9 +2,12 @@ use clap::{Arg, Command};
 use synapse_mcp::{indexer, graph};
 use std::path::PathBuf;
 use std::process;
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env file
+    dotenv().ok();
     let matches = Command::new("synapse-indexer")
         .version("0.1.0")
         .about("Synapse MCP indexer - parses markdown files and updates knowledge graph")

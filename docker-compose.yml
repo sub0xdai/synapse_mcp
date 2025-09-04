@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: synapse-neo4j
+    ports:
+      - "7687:7687"  # Bolt protocol
+      - "7474:7474"  # HTTP interface
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_connector_bolt_listen_address=0.0.0.0:7687
+      - NEO4J_dbms_connector_http_listen_address=0.0.0.0:7474
+      # Memory settings for development
+      - NEO4J_dbms_memory_heap_initial_size=512m
+      - NEO4J_dbms_memory_heap_max_size=1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "MATCH () RETURN count(*) as count"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local

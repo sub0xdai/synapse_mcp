@@ -1,8 +1,11 @@
 use clap::{Arg, Command};
 use synapse_mcp::{graph, mcp_server};
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env file
+    dotenv().ok();
     let matches = Command::new("synapse-mcp")
         .version("0.1.0")
         .about("Synapse MCP - Dynamic memory system for AI coding assistants")
