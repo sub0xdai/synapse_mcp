@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use regex::Regex;
+use rayon::prelude::*;
 
 #[derive(Debug, serde::Deserialize)]
 struct FrontMatter {
@@ -38,6 +39,60 @@ pub fn parse_markdown_file<P: AsRef<Path>>(path: P) -> Result<Option<Node>> {
 }
 
 pub fn parse_multiple_files(paths: &[std::path::PathBuf]) -> Result<(Vec<Node>, Vec<Edge>)> {
+    parse_multiple_files_sequential(paths)
+}
+
+pub fn parse_multiple_files_parallel(paths: &[std::path::PathBuf]) -> Result<(Vec<Node>, Vec<Edge>)> {
+    let verbose = std::env::var("SYNAPSE_VERBOSE").is_ok();
+    
+    // Parse files in parallel
+    let results: Vec<_> = paths
+        .par_iter()
+        .map(|path| {
+            match parse_markdown_file(path) {
+                Ok(Some(node)) => Ok(Some(node)),
+                Ok(None) => {
+                    if verbose {
+                        eprintln!("Skipped {} (no MCP marker or not for Synapse)", path.display());
+                    }
+                    Ok(None)
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse {}: {}", path.display(), e);
+                    Err(e)
+                }
+            }
+        })
+        .collect();
+    
+    // Collect successful results
+    let mut nodes = Vec::new();
+    let mut skipped_count = 0;
+    
+    for result in results {
+        match result {
+            Ok(Some(node)) => nodes.push(node),
+            Ok(None) => skipped_count += 1,
+            Err(_) => {} // Already logged error above
+        }
+    }
+    
+    if verbose && skipped_count > 0 {
+        eprintln!("Processed {} files, skipped {} files without 'mcp: synapse' marker", 
+                  nodes.len(), skipped_count);
+    }
+    
+    // Extract relationships between all documents (sequential for now)
+    let mut all_edges = Vec::new();
+    for node in &nodes {
+        let edges = extract_relationships(&node.content, &node.id);
+        all_edges.extend(edges);
+    }
+    
+    Ok((nodes, all_edges))
+}
+
+pub fn parse_multiple_files_sequential(paths: &[std::path::PathBuf]) -> Result<(Vec<Node>, Vec<Edge>)> {
     let mut nodes = Vec::new();
     let mut all_edges = Vec::new();
     let mut skipped_count = 0;

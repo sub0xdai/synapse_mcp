@@ -1,16 +1,140 @@
 use clap::{Arg, Command};
-use synapse_mcp::{graph, mcp_server};
+use synapse_mcp::{graph, mcp_server, indexer};
 use dotenv::dotenv;
+use std::path::PathBuf;
+use std::process;
+
+mod cli;
 
 #[tokio::main]
 async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
-    let matches = Command::new("synapse-mcp")
-        .version("0.1.0")
-        .about("Synapse MCP - Dynamic memory system for AI coding assistants")
+    
+    let matches = build_cli().get_matches();
+    
+    if let Err(e) = run_command(matches).await {
+        eprintln!("Error: {}", e);
+        process::exit(1);
+    }
+}
+
+fn build_cli() -> Command {
+    Command::new("synapse")
+        .version("0.2.0")
+        .about("Synapse - AI Workspace Framework with Dynamic Memory")
+        .long_about("A comprehensive framework for building AI-readable project documentation and context")
+        .arg_required_else_help(true)
         .subcommand(
-            Command::new("server")
+            Command::new("init")
+                .about("Initialize a Synapse workspace")
+                .long_about("Set up project scaffolding, templates, and automation hooks")
+                .arg(
+                    Arg::new("project-name")
+                        .help("Project name for templates")
+                        .required(false)
+                        .index(1)
+                )
+                .arg(
+                    Arg::new("template")
+                        .short('t')
+                        .long("template")
+                        .help("Template type to use")
+                        .value_parser(["rust", "python", "typescript", "generic"])
+                        .default_value("generic")
+                )
+                .arg(
+                    Arg::new("hooks")
+                        .long("hooks")
+                        .help("Install git hooks")
+                        .action(clap::ArgAction::SetTrue)
+                )
+        )
+        .subcommand(
+            Command::new("index")
+                .about("Index markdown files into knowledge graph")
+                .arg(
+                    Arg::new("files")
+                        .help("Markdown files to index")
+                        .required(true)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("dry-run")
+                        .long("dry-run")
+                        .help("Parse files but don't update database")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    Arg::new("parallel")
+                        .short('j')
+                        .long("parallel")
+                        .help("Number of parallel workers")
+                        .value_parser(clap::value_parser!(usize))
+                        .default_value("4")
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .short('v')
+                        .long("verbose")
+                        .help("Verbose output")
+                        .action(clap::ArgAction::SetTrue)
+                )
+        )
+        .subcommand(
+            Command::new("context")
+                .about("Generate AI context from knowledge graph")
+                .arg(
+                    Arg::new("scope")
+                        .short('s')
+                        .long("scope")
+                        .help("Context scope")
+                        .value_parser(["all", "rules", "architecture", "decisions", "test", "api"])
+                        .default_value("all")
+                )
+                .arg(
+                    Arg::new("format")
+                        .short('f')
+                        .long("format")
+                        .help("Output format")
+                        .value_parser(["markdown", "json", "plain"])
+                        .default_value("markdown")
+                )
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .help("Output file")
+                        .default_value(".synapse_context")
+                )
+                .arg(
+                    Arg::new("filter")
+                        .long("filter")
+                        .help("Filter by file pattern or tags")
+                        .num_args(0..)
+                )
+        )
+        .subcommand(
+            Command::new("query")
+                .about("Query knowledge graph directly")
+                .arg(
+                    Arg::new("query")
+                        .help("Natural language query")
+                        .required(true)
+                        .index(1)
+                )
+                .arg(
+                    Arg::new("format")
+                        .short('f')
+                        .long("format")
+                        .help("Output format")
+                        .value_parser(["markdown", "json", "plain"])
+                        .default_value("markdown")
+                )
+        )
+        .subcommand(
+            Command::new("serve")
                 .about("Start the MCP server")
                 .arg(
                     Arg::new("port")
@@ -21,67 +145,97 @@ async fn main() {
                         .value_parser(clap::value_parser!(u16))
                 )
                 .arg(
-                    Arg::new("neo4j-uri")
-                        .long("neo4j-uri")
-                        .help("Neo4j database URI")
-                        .default_value("bolt://localhost:7687")
+                    Arg::new("host")
+                        .long("host")
+                        .help("Host to bind to")
+                        .default_value("localhost")
                 )
+        )
+        .subcommand(
+            Command::new("status")
+                .about("Check system status and health")
                 .arg(
-                    Arg::new("neo4j-user")
-                        .long("neo4j-user")
-                        .help("Neo4j username")
-                        .default_value("neo4j")
-                )
-                .arg(
-                    Arg::new("neo4j-password")
-                        .long("neo4j-password")
-                        .help("Neo4j password")
-                        .default_value("password")
+                    Arg::new("verbose")
+                        .short('v')
+                        .long("verbose")
+                        .help("Show detailed status")
+                        .action(clap::ArgAction::SetTrue)
                 )
         )
         .subcommand(
             Command::new("demo")
-                .about("Run a demonstration of the system")
+                .about("Run system demonstration")
+                .hide(true)
         )
-        .get_matches();
+        .arg(
+            Arg::new("neo4j-uri")
+                .long("neo4j-uri")
+                .help("Neo4j database URI")
+                .global(true)
+                .default_value("bolt://localhost:7687")
+        )
+        .arg(
+            Arg::new("neo4j-user")
+                .long("neo4j-user")
+                .help("Neo4j username")
+                .global(true)
+                .default_value("neo4j")
+        )
+        .arg(
+            Arg::new("neo4j-password")
+                .long("neo4j-password")
+                .help("Neo4j password")
+                .global(true)
+                .default_value("password")
+        )
+}
+
+async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
+    let neo4j_uri = matches.get_one::<String>("neo4j-uri").unwrap();
+    let neo4j_user = matches.get_one::<String>("neo4j-user").unwrap();
+    let neo4j_password = matches.get_one::<String>("neo4j-password").unwrap();
 
     match matches.subcommand() {
-        Some(("server", sub_matches)) => {
+        Some(("init", sub_matches)) => {
+            cli::commands::init::handle_init(sub_matches).await?
+        }
+        Some(("index", sub_matches)) => {
+            cli::commands::index::handle_index(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+        }
+        Some(("context", sub_matches)) => {
+            cli::commands::context::handle_context(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+        }
+        Some(("query", sub_matches)) => {
+            cli::commands::query::handle_query(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+        }
+        Some(("serve", sub_matches)) => {
             let port = *sub_matches.get_one::<u16>("port").unwrap();
-            let neo4j_uri = sub_matches.get_one::<String>("neo4j-uri").unwrap();
-            let neo4j_user = sub_matches.get_one::<String>("neo4j-user").unwrap();
-            let neo4j_password = sub_matches.get_one::<String>("neo4j-password").unwrap();
-
-            println!("Connecting to Neo4j at {}", neo4j_uri);
+            let host = sub_matches.get_one::<String>("host").unwrap();
+            
+            println!("🚀 Starting Synapse MCP server on {}:{}", host, port);
+            println!("📊 Connecting to Neo4j at {}", neo4j_uri);
             
             match graph::connect(neo4j_uri, neo4j_user, neo4j_password).await {
                 Ok(graph_conn) => {
-                    if let Err(e) = mcp_server::start_server(graph_conn, port).await {
-                        eprintln!("Server error: {}", e);
-                        std::process::exit(1);
-                    }
+                    mcp_server::start_server(graph_conn, port).await?
                 }
                 Err(e) => {
-                    eprintln!("Failed to connect to Neo4j: {}", e);
-                    std::process::exit(1);
+                    return Err(anyhow::anyhow!("Failed to connect to Neo4j: {}", e));
                 }
             }
+        }
+        Some(("status", sub_matches)) => {
+            cli::commands::status::handle_status(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
         }
         Some(("demo", _)) => {
             run_demo().await;
         }
         _ => {
-            println!("Synapse MCP v0.1.0");
-            println!("A dynamic memory system for AI coding assistants");
-            println!();
-            println!("Use --help to see available commands");
-            println!();
-            println!("Quick start:");
-            println!("  synapse-mcp demo                    # Run a demonstration");
-            println!("  synapse-mcp server --port 8080      # Start MCP server");
-            println!("  synapse-indexer file1.md file2.md   # Index markdown files");
+            unreachable!("Command parsing should ensure we never reach this");
         }
     }
+    
+    Ok(())
 }
 
 async fn run_demo() {

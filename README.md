@@ -1,140 +1,311 @@
-# Synapse MCP
+# Synapse AI Workspace Framework
 
-A dynamic memory system for AI coding assistants that provides persistent project context through automated documentation indexing and knowledge graph querying.
+**Transform your codebase into an AI-readable knowledge base that actively guides development**
 
-## Status
+Synapse is a comprehensive AI workspace framework that automatically builds intelligent project context from your documentation, enabling AI coding assistants like Claude Code to provide highly relevant, project-specific guidance.
 
-**Current Version**: 0.1.0  
-**Status**: In Progress Complete Automation System**  
-**Neo4j Integration**: Complete and tested  
-**Automation**: Dual-hook system with git pre-commit and AI context injection  
-**Test Coverage**: 36+ tests passing  
-**Performance**: <500ms indexing, <200ms context generation, <100ms queries
+## 🚀 Quick Start for Claude Code
 
-## Quick Start
-
-### One-Command Setup
+### Option 1: One-Command Setup (Recommended)
 ```bash
-# Complete automation setup
-./setup-hooks.sh
+# Build and initialize the workspace
+cargo build --release
+./target/release/synapse_mcp init --template=rust --hooks
 
-# Write documentation with frontmatter
-echo '---
-mcp: synapse
-type: rule
----
-# My Project Rule' > docs/rule.md
-
-# Commit (triggers automatic indexing)
-git add docs/rule.md && git commit -m "Add rule"
-
-# Get AI context
-./claude-hook.sh context
+# Start coding with AI context!
+./target/release/synapse_mcp context --scope=all
 ```
 
-### Manual Setup (if needed)
-1. **Environment**: `cp .env.example .env` and configure Neo4j
-2. **Install Hooks**: `uv tool install pre-commit && pre-commit install`
-3. **Test**: `cargo test` (36+ tests should pass)
-4. **Start Server**: `cargo run --bin synapse_mcp server --port 8080`
-
-## How It Works
-
-### 🔄 Dual-Hook Automation System
-
-**Write Path** (Automatic Memory Updates)
-- Git commits trigger pre-commit hooks
-- Automatically index markdown files with `mcp: synapse` frontmatter  
-- Real-time Neo4j knowledge graph updates
-
-**Read Path** (AI Context Injection)
-- `./claude-hook.sh context` generates project context
-- AI gets automatic access to rules, architecture decisions, and relationships
-- Zero-friction integration with AI coding workflows
-
-## Architecture
-
-### Core Components
-- **Rust Indexer**: High-performance markdown parsing with YAML frontmatter validation
-- **Neo4j Database**: Graph storage with real Cypher operations (no stubs)
-- **MCP Server**: REST API built with Axum for AI agent integration
-- **Data Models**: Strongly-typed Node and Edge structures with validation
-
-### Database Schema
-**Node Types**: File, Rule, Decision, Function, Architecture, Component  
-**Relationship Types**: RelatesTo, ImplementsRule, DefinedIn, DependsOn, Contains, References  
-**Properties**: Labels, content, tags, metadata, timestamps
-
-### Data Flow
-**Memory Update**: `Markdown Files → Indexer → Validation → Neo4j Graph`  
-**AI Query**: `Natural Language → Keyword Search → Cypher Query → Structured Results`
-
-## API Endpoints
-
-- `GET /health` - Server health check
-- `POST /query` - Natural language knowledge graph queries
-- `GET /nodes/:type` - Query nodes by type (rule, architecture, decision, etc.)
-- `GET /node/:id/related` - Find related nodes and relationships
-
+### Option 2: Step-by-Step Setup
 ```bash
-# Example usage
-curl "http://localhost:8080/nodes/rule"
-curl -X POST http://localhost:8080/query -d '{"query": "performance rules"}'
+# 1. Build the Synapse CLI
+cargo build --release
+
+# 2. Initialize your project workspace
+./target/release/synapse_mcp init MyProject --template=rust
+
+# 3. Install automation hooks (optional but recommended)
+./target/release/synapse_mcp init --hooks
+
+# 4. Generate AI context for Claude
+./target/release/synapse_mcp context --scope=all
 ```
 
-## Development
+## 📋 Claude Code Integration Guide
 
-### Run Tests
+### Step 1: Install & Build Synapse
 ```bash
-cargo test                    # Full test suite
-cargo test --lib             # Unit tests only
+git clone <your-synapse-repo>
+cd synapse_mcp
+cargo build --release
+
+# Add to your PATH (optional)
+export PATH="$PWD/target/release:$PATH"
 ```
 
-### Performance
-- Indexing target: <500ms per batch
-- Query response: <100ms typical
-- Supports concurrent operations
-
-### Environment Variables
+### Step 2: Initialize Your Project
 ```bash
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
-NEO4J_DATABASE=neo4j
-NEO4J_MAX_CONNECTIONS=10
-NEO4J_FETCH_SIZE=500
-SYNAPSE_VERBOSE=true
+# In your project directory
+synapse init --template=rust  # or python, typescript, generic
+
+# This creates:
+# .synapse/rules/           - Coding standards & guidelines  
+# .synapse/architecture/    - System design documentation
+# .synapse/decisions/       - Architecture decision records
+# .synapse/components/      - Component specifications
 ```
 
-## Document Format
+### Step 3: Fill in Your Project Documentation
+Edit the generated templates in `.synapse/` with your project-specific information:
 
-Markdown files must include YAML frontmatter with `mcp: synapse`:
+```bash
+# Edit the key files:
+$EDITOR .synapse/rules/coding_standards.md
+$EDITOR .synapse/architecture/overview.md  
+$EDITOR .synapse/rules/testing_strategy.md
+```
 
+**Example coding standards template:**
 ```yaml
 ---
 mcp: synapse
 type: rule
-title: "Performance Guidelines"
-tags: ["performance", "guidelines"]
+title: "MyProject Coding Standards"
+tags: ["rust", "standards", "performance"]
 ---
 
-# Performance Guidelines
+# MyProject Coding Standards
 
-Content here will be indexed into the knowledge graph...
+## Performance Requirements
+- All API responses must complete within 100ms
+- Database queries must use connection pooling
+- Memory usage should not exceed 512MB under normal load
+
+## Error Handling
+- Use `anyhow::Result` for application errors
+- Never use `unwrap()` in production code
+- Log all errors with structured logging
 ```
 
-## Key Features
+### Step 4: Generate Context for Claude Code
+```bash
+# Generate comprehensive context
+synapse context --scope=all -o .synapse_context
 
-- **🤖 Zero-Friction AI Integration**: Automatic context injection for AI coding assistants
-- **⚡ Lightning Fast**: <500ms indexing, <200ms context generation
-- **🔄 Full Automation**: Git hooks + AI context hooks = completely automated memory system
-- **📊 Production Ready**: 36+ tests, comprehensive error handling, real Neo4j integration
-- **🎯 Smart Filtering**: Only processes documents marked with `mcp: synapse`
-- **🚀 One-Command Setup**: `./setup-hooks.sh` installs everything
+# Or generate focused context for specific tasks:
+synapse context --scope=test -o .synapse_test_context     # Testing context
+synapse context --scope=api -o .synapse_api_context       # API development  
+synapse context --scope=rules -o .synapse_rules_context   # Coding standards
+```
 
-## Ready For
+### Step 5: Use in Claude Code Sessions
 
-- **AI Development Workflows**: Seamless integration with Claude Code, Cursor, etc.
-- **Team Development**: Shared project memory across developers
-- **Production Deployment**: Battle-tested with comprehensive automation
-- **Any Rust/Markdown Project**: Copy scripts and you're ready to go
+When starting a Claude Code session, the generated context file (`.synapse_context`) will be automatically loaded, providing Claude with:
+
+- ✅ **Project-specific coding standards**
+- ✅ **Architecture decisions and constraints** 
+- ✅ **Testing requirements and patterns**
+- ✅ **Performance guidelines and benchmarks**
+- ✅ **Security practices and requirements**
+
+## 🎯 Advanced Usage
+
+### Automatic Context Updates
+Enable git hooks for automatic context updates:
+```bash
+synapse init --hooks
+
+# Now context auto-updates on every commit!
+git add .synapse/rules/new-rule.md
+git commit -m "Add new performance rule"
+# Context automatically regenerated
+```
+
+### Task-Specific Contexts
+Generate focused context for specific development tasks:
+
+```bash
+# API development context
+synapse context --scope=api --format=markdown
+
+# Testing and quality context  
+synapse context --scope=test --format=json
+
+# Architecture and design context
+synapse context --scope=architecture --format=plain
+```
+
+### Project Health Monitoring
+```bash
+# Check system status
+synapse status --verbose
+
+# Query your knowledge base
+synapse query "What are our performance requirements?"
+synapse query "How should I handle errors in this project?"
+```
+
+## 🏗️ Architecture
+
+### Core Components
+- **Unified CLI**: Single `synapse` command for all operations
+- **Project Templates**: Language-specific documentation scaffolding
+- **Smart Context Generation**: Scope-based filtering for relevant context
+- **Parallel Processing**: High-performance document indexing
+- **Knowledge Graph**: Optional Neo4j integration for advanced querying
+
+### Data Flow
+```
+Documentation → Synapse Templates → AI Context → Claude Code
+     ↓              ↓                  ↓           ↓
+  .synapse/     Validation       .synapse_     Enhanced AI
+  templates      & Parsing        context      Guidance
+```
+
+## 🎨 Available Templates
+
+### Rust Projects (`--template=rust`)
+- Rust-specific coding standards
+- Performance optimization guidelines  
+- Error handling best practices
+- Security and memory safety rules
+
+### Python Projects (`--template=python`)
+- PEP 8 compliance guidelines
+- Type hint requirements
+- Virtual environment management
+- Testing with pytest patterns
+
+### TypeScript Projects (`--template=typescript`)  
+- ESLint and Prettier configurations
+- Type definitions and interfaces
+- Bundle optimization guidelines
+- Modern testing patterns
+
+### Generic Projects (`--template=generic`)
+- Universal coding standards
+- Architecture documentation templates
+- Testing strategy frameworks
+- Decision record (ADR) templates
+
+## 📊 Context Scopes
+
+| Scope | Description | Best For |
+|-------|-------------|----------|
+| `all` | Complete project context | General development, onboarding |
+| `rules` | Coding standards & guidelines | Code review, standards enforcement |
+| `architecture` | System design & decisions | Architecture planning, refactoring |
+| `test` | Testing strategies & patterns | Writing tests, QA work |
+| `api` | API design & documentation | Backend development, API design |
+| `security` | Security practices & requirements | Security review, compliance |
+
+## ⚡ Performance
+
+- **Indexing**: <500ms for typical documentation sets
+- **Context Generation**: <200ms for focused scopes
+- **Parallel Processing**: Automatic optimization for large codebases
+- **Smart Caching**: Context regenerated only when documents change
+
+## 🔧 Configuration
+
+### Environment Variables
+```bash
+# Optional Neo4j integration
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password
+
+# Synapse configuration
+SYNAPSE_VERBOSE=true          # Enable detailed logging
+SYNAPSE_CONTEXT_FILE=.synapse_context  # Default context file name
+```
+
+### Document Format
+All Synapse documents use YAML frontmatter for metadata:
+
+```yaml
+---
+mcp: synapse              # Required: marks document for Synapse
+type: rule                # Document type (rule, architecture, decision, component)
+title: "Document Title"   # Human-readable title
+tags: ["tag1", "tag2"]   # Categorization tags
+---
+
+# Your documentation content here
+```
+
+## 🤖 Claude Code Tips
+
+### Best Practices
+1. **Start each session** with `synapse context --scope=all` for comprehensive guidance
+2. **Use focused scopes** when working on specific features (e.g., `--scope=test` for testing)
+3. **Update documentation templates** as your project evolves
+4. **Enable git hooks** for automatic context updates
+
+### Common Workflows
+```bash
+# Starting API development
+synapse context --scope=api
+# Claude now knows your API standards, error handling, and performance requirements
+
+# Code review preparation  
+synapse context --scope=rules
+# Claude can check code against your specific standards
+
+# Architecture planning
+synapse context --scope=architecture  
+# Claude understands your system design and constraints
+```
+
+## 🚨 Troubleshooting
+
+### Context Not Loading
+```bash
+# Check system status
+synapse status --verbose
+
+# Regenerate context
+synapse context --scope=all --format=markdown
+
+# Verify file exists
+ls -la .synapse_context
+```
+
+### Performance Issues
+```bash
+# Use parallel processing for large doc sets
+synapse index docs/*.md --parallel 8
+
+# Check indexing performance
+SYNAPSE_VERBOSE=1 synapse context --scope=all
+```
+
+### Template Issues
+```bash
+# Re-initialize templates
+synapse init --template=rust  # Regenerates templates
+
+# Check template structure
+find .synapse -name "*.md" -exec head -10 {} \;
+```
+
+## 🎉 Success Indicators
+
+You'll know Synapse is working when Claude Code:
+- ✅ **Follows your coding standards** automatically
+- ✅ **Suggests project-appropriate patterns** and solutions
+- ✅ **Remembers architectural decisions** and constraints
+- ✅ **Applies consistent error handling** and testing approaches
+- ✅ **Respects performance requirements** and security practices
+
+## 💡 Pro Tips
+
+1. **Start simple**: Use generic templates first, then customize
+2. **Be specific**: Include exact performance numbers, not vague requirements
+3. **Update regularly**: Keep documentation current with code changes
+4. **Use scopes**: Generate focused context for specific development tasks
+5. **Enable automation**: Git hooks ensure context stays synchronized
+
+---
+
+**Ready to transform your AI coding experience?** Run `synapse init` in your project directory and watch Claude Code become your perfect coding partner! 🚀

@@ -318,6 +318,20 @@ pub async fn delete_edge(graph: &Graph, source_id: &str, target_id: &str) -> Res
     }
 }
 
+pub async fn get_node_count(graph: &Graph) -> Result<i64> {
+    let query = "MATCH (n) RETURN count(n) as count";
+    
+    let mut result = graph.client.execute(
+        neo4rs::query(query)
+    ).await.map_err(|e| SynapseError::Neo4j(e))?;
+    
+    if let Some(row) = result.next().await.map_err(|e| SynapseError::Neo4j(e))? {
+        Ok(row.get("count").unwrap_or(0))
+    } else {
+        Ok(0)
+    }
+}
+
 // Helper functions remain the same
 fn _node_type_to_label(node_type: &NodeType) -> &'static str {
     match node_type {
@@ -338,6 +352,8 @@ fn edge_type_to_relationship(edge_type: &EdgeType) -> &'static str {
         EdgeType::DependsOn => "DEPENDS_ON",
         EdgeType::Contains => "CONTAINS",
         EdgeType::References => "REFERENCES",
+        EdgeType::Inherits => "INHERITS",
+        EdgeType::Overrides => "OVERRIDES",
     }
 }
 
