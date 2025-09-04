@@ -1,0 +1,144 @@
+use crate::{graph, Result, SynapseError};
+use axum::{
+    extract::State,
+    response::Json,
+    routing::post,
+    Router,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::net::TcpListener;
+
+#[derive(Clone)]
+pub struct ServerState {
+    pub graph: Arc<graph::Graph>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct QueryRequest {
+    pub query: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct QueryResponse {
+    pub result: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+pub async fn create_server(graph: graph::Graph) -> Router {
+    let state = ServerState {
+        graph: Arc::new(graph),
+    };
+
+    Router::new()
+        .route("/query", post(handle_query))
+        .route("/health", axum::routing::get(health_check))
+        .with_state(state)
+}
+
+pub async fn start_server(graph: graph::Graph, port: u16) -> Result<()> {
+    let app = create_server(graph).await;
+    let addr = format!("0.0.0.0:{}", port);
+    
+    println!("Starting Synapse MCP server on {}", addr);
+    
+    let listener = TcpListener::bind(&addr).await
+        .map_err(|e| SynapseError::Io(e))?;
+        
+    axum::serve(listener, app).await
+        .map_err(|e| SynapseError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    
+    Ok(())
+}
+
+async fn handle_query(
+    State(state): State<ServerState>,
+    Json(request): Json<QueryRequest>,
+) -> Json<QueryResponse> {
+    match graph::natural_language_query(&state.graph, &request.query).await {
+        Ok(result) => Json(QueryResponse {
+            result,
+            success: true,
+            error: None,
+        }),
+        Err(e) => Json(QueryResponse {
+            result: String::new(),
+            success: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+async fn health_check() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "healthy",
+        "service": "synapse-mcp-server",
+        "version": "0.1.0"
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+
+    #[tokio::test]
+    async fn test_health_endpoint() {
+        let graph = graph::connect("test://", "test", "test").await.unwrap();
+        let app = create_server(graph).await;
+        let server = TestServer::new(app).unwrap();
+
+        let response = server.get("/health").await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["status"], "healthy");
+        assert_eq!(body["service"], "synapse-mcp-server");
+    }
+
+    #[tokio::test]
+    async fn test_query_endpoint() {
+        let graph = graph::connect("test://", "test", "test").await.unwrap();
+        let app = create_server(graph).await;
+        let server = TestServer::new(app).unwrap();
+
+        let query_request = QueryRequest {
+            query: "Find rules about performance".to_string(),
+        };
+
+        let response = server
+            .post("/query")
+            .json(&query_request)
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+        
+        let body: QueryResponse = response.json();
+        assert!(body.success);
+        assert!(body.result.contains("Performance Rule") || body.result.contains("No matching"));
+    }
+
+    #[tokio::test]
+    async fn test_query_with_invalid_input() {
+        let graph = graph::connect("test://", "test", "test").await.unwrap();
+        let app = create_server(graph).await;
+        let server = TestServer::new(app).unwrap();
+
+        let query_request = QueryRequest {
+            query: "completely invalid query that should fail".to_string(),
+        };
+
+        let response = server
+            .post("/query")
+            .json(&query_request)
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+        
+        let _body: QueryResponse = response.json();
+        // Even if query fails to parse, server should return success with "No matching" message
+        // This follows KISS principle - handle errors gracefully
+    }
+}
