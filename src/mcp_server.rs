@@ -1,8 +1,8 @@
-use crate::{graph, Result, SynapseError};
+use crate::{graph, Result, SynapseError, NodeType};
 use axum::{
-    extract::State,
+    extract::{State, Path},
     response::Json,
-    routing::post,
+    routing::{post, get},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,22 @@ pub struct QueryResponse {
     pub error: Option<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct NodesResponse {
+    pub nodes: Vec<crate::Node>,
+    pub count: usize,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RelatedResponse {
+    pub related: Vec<(crate::Node, crate::Edge)>,
+    pub count: usize,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 pub async fn create_server(graph: graph::Graph) -> Router {
     let state = ServerState {
         graph: Arc::new(graph),
@@ -33,7 +49,9 @@ pub async fn create_server(graph: graph::Graph) -> Router {
 
     Router::new()
         .route("/query", post(handle_query))
-        .route("/health", axum::routing::get(health_check))
+        .route("/nodes/:type", get(handle_nodes_by_type))
+        .route("/node/:id/related", get(handle_related_nodes))
+        .route("/health", get(health_check))
         .with_state(state)
 }
 
@@ -64,6 +82,63 @@ async fn handle_query(
         }),
         Err(e) => Json(QueryResponse {
             result: String::new(),
+            success: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+async fn handle_nodes_by_type(
+    State(state): State<ServerState>,
+    Path(node_type_str): Path<String>,
+) -> Json<NodesResponse> {
+    let node_type = match node_type_str.to_lowercase().as_str() {
+        "file" => NodeType::File,
+        "rule" => NodeType::Rule,
+        "decision" => NodeType::Decision,
+        "function" => NodeType::Function,
+        "architecture" => NodeType::Architecture,
+        "component" => NodeType::Component,
+        _ => {
+            return Json(NodesResponse {
+                nodes: Vec::new(),
+                count: 0,
+                success: false,
+                error: Some(format!("Invalid node type: {}", node_type_str)),
+            });
+        }
+    };
+
+    match graph::query_nodes_by_type(&state.graph, &node_type).await {
+        Ok(nodes) => Json(NodesResponse {
+            count: nodes.len(),
+            nodes,
+            success: true,
+            error: None,
+        }),
+        Err(e) => Json(NodesResponse {
+            nodes: Vec::new(),
+            count: 0,
+            success: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+async fn handle_related_nodes(
+    State(state): State<ServerState>,
+    Path(node_id): Path<String>,
+) -> Json<RelatedResponse> {
+    match graph::find_related_nodes(&state.graph, &node_id).await {
+        Ok(related) => Json(RelatedResponse {
+            count: related.len(),
+            related,
+            success: true,
+            error: None,
+        }),
+        Err(e) => Json(RelatedResponse {
+            related: Vec::new(),
+            count: 0,
             success: false,
             error: Some(e.to_string()),
         }),
