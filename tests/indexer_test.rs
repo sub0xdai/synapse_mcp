@@ -4,6 +4,7 @@ use std::io::Write;
 
 // Test data for markdown files with YAML frontmatter
 const TEST_RULE_MD: &str = r#"---
+mcp: synapse
 type: rule
 title: "Use Rust for Performance Critical Code"
 tags: ["architecture", "performance"]
@@ -28,6 +29,7 @@ Rust provides:
 "#;
 
 const TEST_DECISION_MD: &str = r#"---
+mcp: synapse
 type: decision
 title: "Choose Neo4j for Knowledge Graph"
 tags: ["architecture", "database"]
@@ -65,6 +67,28 @@ This file has no YAML frontmatter.
 It should be treated as a regular file.
 "#;
 
+const TEST_OTHER_MCP_MD: &str = r#"---
+mcp: other-server
+type: documentation
+title: "Other MCP Document"
+---
+
+# Other MCP Document
+
+This document is for a different MCP server and should be skipped.
+"#;
+
+const TEST_NO_MCP_MARKER_MD: &str = r#"---
+type: rule
+title: "Rule without MCP marker"
+tags: ["test"]
+---
+
+# Rule without MCP marker
+
+This document has frontmatter but no MCP marker, should be skipped.
+"#;
+
 #[test]
 fn test_parse_rule_document() {
     // Create temporary file with rule content
@@ -76,7 +100,9 @@ fn test_parse_rule_document() {
     let result = synapse_mcp::indexer::parse_markdown_file(temp_path);
     
     assert!(result.is_ok());
-    let node = result.unwrap();
+    let node_option = result.unwrap();
+    assert!(node_option.is_some());
+    let node = node_option.unwrap();
     
     assert_eq!(node.node_type, NodeType::Rule);
     assert_eq!(node.label, "Use Rust for Performance Critical Code");
@@ -95,7 +121,9 @@ fn test_parse_decision_document() {
     let result = synapse_mcp::indexer::parse_markdown_file(temp_path);
     
     assert!(result.is_ok());
-    let node = result.unwrap();
+    let node_option = result.unwrap();
+    assert!(node_option.is_some());
+    let node = node_option.unwrap();
     
     assert_eq!(node.node_type, NodeType::Decision);
     assert_eq!(node.label, "Choose Neo4j for Knowledge Graph");
@@ -125,11 +153,59 @@ fn test_parse_no_frontmatter() {
     let result = synapse_mcp::indexer::parse_markdown_file(temp_path);
     
     assert!(result.is_ok());
-    let node = result.unwrap();
+    let node_option = result.unwrap();
+    assert!(node_option.is_none()); // Should be skipped without frontmatter
+}
+
+#[test]
+fn test_parse_other_mcp_server() {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    write!(temp_file, "{}", TEST_OTHER_MCP_MD).unwrap();
+    let temp_path = temp_file.path();
     
-    assert_eq!(node.node_type, NodeType::File);
-    assert!(node.label.contains("Regular Markdown File") || node.label.contains(temp_path.to_str().unwrap()));
-    assert!(node.content.contains("This file has no YAML frontmatter"));
+    let result = synapse_mcp::indexer::parse_markdown_file(temp_path);
+    
+    assert!(result.is_ok());
+    let node_option = result.unwrap();
+    assert!(node_option.is_none()); // Should be skipped - different MCP server
+}
+
+#[test]
+fn test_parse_no_mcp_marker() {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    write!(temp_file, "{}", TEST_NO_MCP_MARKER_MD).unwrap();
+    let temp_path = temp_file.path();
+    
+    let result = synapse_mcp::indexer::parse_markdown_file(temp_path);
+    
+    assert!(result.is_ok());
+    let node_option = result.unwrap();
+    assert!(node_option.is_none()); // Should be skipped - no MCP marker
+}
+
+#[test]
+fn test_synapse_mcp_marker_required() {
+    // Test with Synapse MCP marker
+    let synapse_content = r#"---
+mcp: synapse
+type: rule
+title: "Test Rule"
+---
+
+# Test Rule
+Test content
+"#;
+    
+    let mut synapse_file = NamedTempFile::new().unwrap();
+    write!(synapse_file, "{}", synapse_content).unwrap();
+    
+    let result = synapse_mcp::indexer::parse_markdown_file(synapse_file.path());
+    assert!(result.is_ok());
+    let node_option = result.unwrap();
+    assert!(node_option.is_some());
+    let node = node_option.unwrap();
+    assert_eq!(node.node_type, NodeType::Rule);
+    assert_eq!(node.label, "Test Rule");
 }
 
 #[test]
@@ -192,7 +268,7 @@ fn test_batch_parse_files() {
 
 #[test]
 fn test_parse_performance_under_500ms() {
-    // Create a reasonably sized markdown file
+    // Create a reasonably sized markdown file with MCP marker
     let large_content = format!(
         "{}\n{}", 
         TEST_RULE_MD,
@@ -208,5 +284,6 @@ fn test_parse_performance_under_500ms() {
     let duration = start.elapsed();
     
     assert!(result.is_ok());
+    assert!(result.unwrap().is_some()); // Should parse successfully
     assert!(duration.as_millis() < 500, "Parsing took {}ms, should be under 500ms", duration.as_millis());
 }

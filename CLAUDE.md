@@ -56,3 +56,35 @@ The project is in early development with basic data structures defined. The main
 4. Providing real-time context via MCP server API
 
 Performance target: Pre-commit hook indexing must complete under 500ms for average documentation changes.
+
+## Document Format Requirements
+
+### MCP Marker Requirement
+Only markdown files with YAML frontmatter containing `mcp: synapse` will be processed. This allows multiple MCP servers to coexist without conflicts.
+
+**Required frontmatter format:**
+```yaml
+---
+mcp: synapse          # Required - marks document for Synapse MCP
+type: rule            # Optional - node type (rule, decision, architecture, component, function)
+title: "Document Title" # Optional - display name
+tags: ["tag1", "tag2"] # Optional - categorization tags
+# ... other metadata
+---
+```
+
+**Supported node types:**
+- `rule` - Development rules and guidelines
+- `decision` - Architecture decisions and rationale  
+- `architecture` - System architecture documentation
+- `component` - Component specifications
+- `function` - Function/method documentation
+- Default: `file` (if no type specified)
+
+**Document filtering:**
+- Files without frontmatter: skipped
+- Files with `mcp: other-server`: skipped  
+- Files without `mcp` field: skipped
+- Only `mcp: synapse` documents are indexed
+
+Use `SYNAPSE_VERBOSE=1` with indexer for detailed filtering information.

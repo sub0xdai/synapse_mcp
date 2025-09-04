@@ -151,6 +151,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_with_sample_file() {
         let test_content = r#"---
+mcp: synapse
 type: rule
 title: "Test Rule"
 tags: ["test"]
