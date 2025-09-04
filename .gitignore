@@ -15,3 +15,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Synapse MCP context file
+.synapse_context

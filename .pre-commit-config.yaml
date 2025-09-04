@@ -1,0 +1,23 @@
+repos:
+  # Rust standard checks
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        args: ["--", "--check"]
+      - id: clippy
+        args: ["--", "-D", "warnings"]
+
+  # Custom Synapse MCP indexer
+  - repo: local
+    hooks:
+      - id: synapse-indexer
+        name: Synapse MCP Indexer
+        entry: bash
+        language: system
+        # Only run on markdown files with 'mcp: synapse' marker
+        files: '\.md$'
+        # Custom script to check for mcp marker and run indexer
+        args: ['-c', 'for file in "$@"; do if grep -q "^mcp: synapse" "$file" 2>/dev/null; then echo "Indexing $file with Synapse MCP..."; cargo run --bin indexer "$file" || exit 1; fi; done', '--']
+        pass_filenames: true
+        stages: [pre-commit]
