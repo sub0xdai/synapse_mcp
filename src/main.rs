@@ -264,6 +264,22 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
     let neo4j_password = matches.get_one::<String>("neo4j-password")
         .context("neo4j-password argument is required")?;
 
+    // Check if we need to load RuleGraph for enforcement commands
+    let rule_graph = match matches.subcommand() {
+        Some(("check", _)) | Some(("enforce-context", _)) => {
+            let current_dir = std::env::current_dir()?;
+            match synapse_mcp::RuleGraph::from_project(&current_dir) {
+                Ok(graph) => Some(graph),
+                Err(e) => {
+                    eprintln!("⚠️  Failed to load rule graph: {}", e);
+                    eprintln!("   Continuing without rule enforcement");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
     match matches.subcommand() {
         Some(("init", sub_matches)) => {
             cli::commands::init::handle_init(sub_matches).await?
@@ -320,10 +336,10 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             mcp_server::start_server(server_config).await?
         }
         Some(("check", sub_matches)) => {
-            cli::commands::check::handle_check(sub_matches).await?
+            cli::commands::check::handle_check(sub_matches, rule_graph.as_ref()).await?
         }
         Some(("enforce-context", sub_matches)) => {
-            cli::commands::enforce_context::handle_enforce_context(sub_matches).await?
+            cli::commands::enforce_context::handle_enforce_context(sub_matches, rule_graph.as_ref()).await?
         }
         Some(("status", sub_matches)) => {
             cli::commands::status::handle_status(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?

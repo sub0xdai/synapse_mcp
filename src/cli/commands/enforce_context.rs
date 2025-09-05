@@ -26,7 +26,7 @@ pub struct RuleContextInfo {
     pub enforcement_level: String,
 }
 
-pub async fn handle_enforce_context(matches: &ArgMatches) -> Result<()> {
+pub async fn handle_enforce_context(matches: &ArgMatches, rule_graph_opt: Option<&synapse_mcp::RuleGraph>) -> Result<()> {
     let path: &PathBuf = matches.get_one::<PathBuf>("path")
         .ok_or_else(|| anyhow::anyhow!("Path is required"))?;
         
@@ -38,20 +38,19 @@ pub async fn handle_enforce_context(matches: &ArgMatches) -> Result<()> {
         println!("🤖 Generating enforcement context for: {}", path.display());
     }
     
-    // Load RuleGraph from current directory
-    let current_dir = std::env::current_dir()?;
-    let rule_graph = match RuleGraph::from_project(&current_dir) {
-        Ok(graph) => {
+    // Use the pre-loaded RuleGraph or exit if none available
+    let rule_graph = match rule_graph_opt {
+        Some(graph) => {
             if verbose {
                 let stats = graph.stats();
-                println!("📊 Loaded rule graph with {} rule files containing {} total rules", 
+                println!("📊 Using rule graph with {} rule files containing {} total rules", 
                     stats.rule_files, stats.total_rules);
             }
             graph
         }
-        Err(e) => {
+        None => {
             if verbose {
-                println!("⚠️  No rule graph found: {}", e);
+                println!("⚠️  No rule graph available - no context generated");
             }
             println!("# No Enforcement Rules Found\n");
             println!("No .synapse.md rule files found in the project hierarchy.");

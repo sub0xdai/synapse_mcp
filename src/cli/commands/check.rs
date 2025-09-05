@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use synapse_mcp::{RuleGraph, RuleType, CompositeRules, Violation, check_rules};
+use synapse_mcp::{RuleGraph, RuleType, Violation, check_rules};
 
 /// Result of checking files against rules
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct CheckResult {
     pub rules_applied: usize,
 }
 
-pub async fn handle_check(matches: &ArgMatches) -> Result<()> {
+pub async fn handle_check(matches: &ArgMatches, rule_graph_opt: Option<&RuleGraph>) -> Result<()> {
     let files: Vec<&PathBuf> = matches
         .get_many::<PathBuf>("files")
         .map(|v| v.collect())
@@ -37,22 +37,20 @@ pub async fn handle_check(matches: &ArgMatches) -> Result<()> {
         println!();
     }
     
-    // Load RuleGraph from current directory
-    let current_dir = std::env::current_dir()?;
-    let rule_graph = match RuleGraph::from_project(&current_dir) {
-        Ok(graph) => {
+    // Use the pre-loaded RuleGraph or exit if none available
+    let rule_graph = match rule_graph_opt {
+        Some(graph) => {
             if verbose {
                 let stats = graph.stats();
-                println!("📊 Loaded rule graph with {} rule files containing {} total rules", 
+                println!("📊 Using rule graph with {} rule files containing {} total rules", 
                     stats.rule_files, stats.total_rules);
                 println!();
             }
             graph
         }
-        Err(e) => {
+        None => {
             if verbose {
-                println!("⚠️  No rule graph found: {}", e);
-                println!("Proceeding without rule enforcement");
+                println!("⚠️  No rule graph available - proceeding without rule enforcement");
             }
             return Ok(());
         }
