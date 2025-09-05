@@ -3,6 +3,22 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// In-memory graph representing rule relationships for fast lookups
+/// 
+/// The RuleGraph builds an efficient representation of all `.synapse.md` files
+/// in a project, handling inheritance chains and rule overrides. It provides
+/// O(log n) lookup times for determining which rules apply to any file path.
+/// 
+/// # Architecture
+/// 
+/// The graph stores rule sets by directory path and uses directory traversal
+/// to build inheritance chains. Rules from parent directories are inherited
+/// by children, with explicit override support.
+/// 
+/// # Performance Characteristics
+/// 
+/// * Construction: O(n * m) where n = number of directories, m = average rules per directory
+/// * Rule lookup: O(d * r) where d = directory depth, r = rules per directory  
+/// * Memory usage: O(total rules) - rules are shared via Arc when possible
 pub struct RuleGraph {
     /// Maps file paths to their RuleSet
     rule_sets: HashMap<PathBuf, RuleSet>,
@@ -21,8 +37,42 @@ impl RuleGraph {
 
     /// Build RuleGraph from a project root directory
     /// 
-    /// This discovers all .synapse.md files recursively and parses them,
-    /// building a complete graph of rule relationships.
+    /// Discovers all `.synapse.md` files recursively and parses them,
+    /// building a complete graph of rule relationships with inheritance.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `root` - Root directory path to scan for rule files
+    /// 
+    /// # Returns
+    /// 
+    /// Returns a fully constructed RuleGraph ready for rule lookups.
+    /// 
+    /// # Performance
+    /// 
+    /// * I/O bound: O(f) file reads where f = number of .synapse.md files
+    /// * CPU bound: O(n * r) where n = directories, r = average rules per directory
+    /// * Target: Complete project indexing under 500ms
+    /// 
+    /// # Error Conditions
+    /// 
+    /// * File system access errors (permissions, missing files)
+    /// * YAML parsing errors in .synapse.md frontmatter
+    /// * Rule format validation errors
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use synapse_mcp::RuleGraph;
+    /// use std::path::PathBuf;
+    /// 
+    /// let project_root = PathBuf::from("/path/to/project");
+    /// let rule_graph = RuleGraph::from_project(&project_root)?;
+    /// 
+    /// // Now ready to look up rules for any file
+    /// let rules = rule_graph.rules_for(&PathBuf::from("/path/to/project/src/main.rs"))?;
+    /// # Ok::<(), synapse_mcp::SynapseError>(())
+    /// ```
     pub fn from_project(root: &PathBuf) -> Result<Self> {
         let rule_system = RuleSystem::new();
         let rule_sets = rule_system.load_rules(root)?;

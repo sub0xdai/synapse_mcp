@@ -1,10 +1,58 @@
 use crate::models::{CompiledRule, Violation, RuleType, PatternMatcher};
 use std::path::Path;
 
-/// Central rule checking function
+/// Central rule checking function for enforcing development rules
 /// 
 /// This is the single source of truth for rule enforcement logic.
-/// All CLI and server implementations should use this function.
+/// All CLI and server implementations should use this function for consistency.
+/// 
+/// # Arguments
+/// 
+/// * `file_path` - Path to the file being checked (used in violation reporting)
+/// * `content` - Full text content of the file to analyze
+/// * `rules` - Pre-compiled rules with optimized pattern matchers
+/// 
+/// # Returns
+/// 
+/// Returns a vector of violations found in the file. Empty vector means
+/// the file passes all rule checks.
+/// 
+/// # Performance
+/// 
+/// * Time complexity: O(n * m * k) where n = content length, m = number of rules, k = average pattern complexity
+/// * Pre-compiled regex patterns provide significant performance gains over string compilation
+/// * Content is split into lines once and reused for all rule checks
+/// 
+/// # Error Conditions
+/// 
+/// * Returns error if regex matching fails (malformed patterns)
+/// * File path validation errors are not returned - invalid paths are used as-is in violations
+/// 
+/// # Examples
+/// 
+/// ```
+/// use synapse_mcp::{check_rules, CompiledRule, Rule, RuleType};
+/// use std::path::Path;
+/// 
+/// let rule = Rule {
+///     id: "test".to_string(),
+///     name: "No TODO".to_string(),
+///     rule_type: RuleType::Forbidden,
+///     pattern: "TODO".to_string(),
+///     message: "Remove TODO comments".to_string(),
+///     tags: vec![],
+///     metadata: std::collections::HashMap::new(),
+/// };
+/// 
+/// let compiled = CompiledRule::from_rule(rule);
+/// let violations = check_rules(
+///     Path::new("test.rs"),
+///     "// TODO: fix this",
+///     &[compiled]
+/// ).unwrap();
+/// 
+/// assert_eq!(violations.len(), 1);
+/// ```
 pub fn check_rules(
     file_path: &Path,
     content: &str, 

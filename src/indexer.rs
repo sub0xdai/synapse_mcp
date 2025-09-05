@@ -17,6 +17,47 @@ struct FrontMatter {
     metadata: HashMap<String, serde_yaml::Value>,
 }
 
+/// Parse a single markdown file into a knowledge graph node
+/// 
+/// Only processes files with YAML frontmatter containing `mcp: synapse` marker.
+/// This allows multiple MCP servers to coexist without conflicts.
+/// 
+/// # Arguments
+/// 
+/// * `path` - Path to the markdown file to parse
+/// 
+/// # Returns
+/// 
+/// * `Ok(Some(node))` - Successfully parsed file with synapse marker
+/// * `Ok(None)` - File was skipped (no frontmatter, wrong MCP marker, etc.)
+/// * `Err(error)` - File system error or YAML parsing error
+/// 
+/// # Performance
+/// 
+/// * File I/O: O(n) where n = file size
+/// * YAML parsing: O(m) where m = frontmatter size  
+/// * Content processing: O(n) for relationship extraction
+/// 
+/// # Supported frontmatter fields
+/// 
+/// * `mcp: synapse` - Required marker for processing
+/// * `type` - Node type (rule, decision, architecture, component, function)
+/// * `title` - Display name (falls back to filename)
+/// * `tags` - Array of categorization tags
+/// * Additional metadata fields are preserved
+/// 
+/// # Examples
+/// 
+/// ```no_run
+/// use synapse_mcp::parse_markdown_file;
+/// 
+/// // Returns Some(node) for files with synapse marker
+/// let node = parse_markdown_file("docs/rules.md").unwrap();
+/// 
+/// // Returns None for files without marker  
+/// let skipped = parse_markdown_file("README.md").unwrap();
+/// assert!(skipped.is_none());
+/// ```
 pub fn parse_markdown_file<P: AsRef<Path>>(path: P) -> Result<Option<Node>> {
     let content = fs::read_to_string(&path)?;
     let path_str = path.as_ref().to_string_lossy().to_string();

@@ -13,6 +13,7 @@ pub mod formatting;
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
 pub use error::{SynapseError, Result};
 pub use rule_graph::{RuleGraph, RuleGraphStats};
+pub use indexer::parse_markdown_file;
 pub use rules::{RuleSystem};
 pub use mcp_server::{PatternEnforcer};
 pub use enforcement::check_rules;

@@ -5,16 +5,44 @@ use std::sync::Arc;
 use uuid::Uuid;
 use regex::Regex;
 
+/// Node types in the Synapse knowledge graph
+/// 
+/// Represents different categories of entities that can be stored and queried
+/// in the knowledge graph. Each type has specific semantics and use cases.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum NodeType {
+    /// Source code files and documentation
     File,
+    /// Development rules and guidelines 
     Rule,
+    /// Architecture decisions and rationale
     Decision,
+    /// Function/method documentation
     Function,
+    /// System architecture documentation
     Architecture,
+    /// Component specifications
     Component,
 }
 
+/// A node in the Synapse knowledge graph
+/// 
+/// Nodes represent entities like files, rules, decisions, and functions.
+/// Each node has a unique ID, type classification, and associated content.
+/// 
+/// # Fields
+/// 
+/// * `id` - Unique identifier (UUID v4)
+/// * `node_type` - Classification of the node (File, Rule, Decision, etc.)
+/// * `label` - Human-readable name/title
+/// * `content` - Full text content (markdown, code, etc.)
+/// * `tags` - Categorization tags for filtering and organization
+/// * `metadata` - Additional key-value properties
+/// 
+/// # Performance
+/// 
+/// Node creation is O(1), but content parsing for relationship extraction
+/// can be O(n) where n is the content length.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Node {
     pub id: String,
@@ -25,18 +53,47 @@ pub struct Node {
     pub metadata: HashMap<String, String>,
 }
 
+/// Edge types representing relationships in the knowledge graph
+/// 
+/// Defines the semantic meaning of connections between nodes.
+/// Each edge type has specific query and traversal implications.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum EdgeType {
+    /// Generic relationship between entities
     RelatesTo,
+    /// Code implements a specific rule
     ImplementsRule,
+    /// Entity is defined in a particular location
     DefinedIn,
+    /// Dependency relationship between components
     DependsOn,
+    /// Hierarchical containment (file contains function)
     Contains,
+    /// Reference to another entity
     References,
+    /// Rule inheritance in nested directories
     Inherits,
+    /// Rule override in child directories
     Overrides,
 }
 
+/// A directed edge connecting two nodes in the knowledge graph
+/// 
+/// Edges represent relationships and enable graph traversal for queries.
+/// All edges are directional, flowing from source to target.
+/// 
+/// # Fields
+/// 
+/// * `source_id` - ID of the originating node
+/// * `target_id` - ID of the destination node  
+/// * `edge_type` - Semantic type of the relationship
+/// * `label` - Human-readable description of the connection
+/// * `metadata` - Additional properties for complex relationships
+/// 
+/// # Performance
+/// 
+/// Edge creation is O(1). Graph traversal complexity depends on the
+/// Neo4j query optimizer and index usage.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Edge {
     pub source_id: String,
@@ -48,14 +105,53 @@ pub struct Edge {
 
 // Phase 1: Rule-specific data structures
 
+/// Types of rules that can be enforced by the Synapse system
+/// 
+/// Each rule type has different enforcement semantics and severity levels.
+/// The type determines how violations are handled and reported.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum RuleType {
-    Forbidden,    // Pattern that must not exist
-    Required,     // Pattern that must exist
-    Standard,     // Preferred pattern with suggestions
-    Convention,   // Style/naming convention
+    /// Pattern that must not exist - blocks commits when found
+    Forbidden,    
+    /// Pattern that must exist - warns when missing
+    Required,     
+    /// Preferred pattern with suggestions - provides guidance
+    Standard,     
+    /// Style/naming convention - formatting recommendations
+    Convention,   
 }
 
+/// A development rule parsed from .synapse.md files
+/// 
+/// Rules define patterns that should be enforced, required, or recommended
+/// in the codebase. They are parsed from markdown files and compiled for
+/// efficient matching against source code.
+/// 
+/// # Fields
+/// 
+/// * `id` - Unique identifier for the rule
+/// * `name` - Human-readable rule name
+/// * `rule_type` - Enforcement type (Forbidden, Required, etc.)
+/// * `pattern` - String or regex pattern to match
+/// * `message` - Description shown to developers when rule triggers
+/// * `tags` - Categorization for filtering and organization
+/// * `metadata` - Additional properties and configuration
+/// 
+/// # Examples
+/// 
+/// ```
+/// use synapse_mcp::{Rule, RuleType};
+/// 
+/// let rule = Rule {
+///     id: "no-println".to_string(),
+///     name: "No println!".to_string(), 
+///     rule_type: RuleType::Forbidden,
+///     pattern: "println!".to_string(),
+///     message: "Use logging instead of println!".to_string(),
+///     tags: vec!["logging".to_string()],
+///     metadata: std::collections::HashMap::new(),
+/// };
+/// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Rule {
     pub id: String,
