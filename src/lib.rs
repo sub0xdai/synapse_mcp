@@ -27,5 +27,5 @@ pub use formatting::{
     OutputFormatter, Formattable, MarkdownFormatter, JsonFormatter, PlainFormatter,
     get_formatter, FormattableContext
 };
-pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig};
+pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig, LoggingConfig};
 

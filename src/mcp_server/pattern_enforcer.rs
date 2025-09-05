@@ -2,6 +2,7 @@ use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules
 use std::path::PathBuf;
 
 /// PatternEnforcer integrates RuleGraph with MCP server for real-time rule enforcement
+#[derive(Debug)]
 pub struct PatternEnforcer {
     rule_graph: RuleGraph,
 }

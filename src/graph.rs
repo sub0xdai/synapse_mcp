@@ -7,6 +7,28 @@ pub struct Graph {
     client: Neo4jGraph,
 }
 
+impl std::fmt::Debug for Graph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("client", &"Neo4jGraph<..>")
+            .finish()
+    }
+}
+
+impl Graph {
+    /// Simple health check query to verify database connectivity
+    pub async fn health_check(&self) -> Result<bool> {
+        use tracing::debug;
+        match self.client.execute(neo4rs::query("RETURN 1 as health")).await {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                debug!("Graph health check failed: {}", e);
+                Ok(false)
+            }
+        }
+    }
+}
+
 impl Graph {
     #[cfg(test)]
     pub fn new_mock() -> Result<Self> {

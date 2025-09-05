@@ -20,8 +20,10 @@ A dynamic memory system for AI coding assistants that provides persistent projec
 The fastest way to get started is using Docker Compose:
 
 ```bash
-git clone <your-synapse-repo>
+git clone git@github.com:sub0xdai/synapse_mcp.git
+
 cd synapse_mcp
+
 
 # Start Neo4j database and Synapse MCP server
 docker-compose up -d
@@ -133,7 +135,8 @@ For production use, deploy with Docker Compose:
 
 ```bash
 # Clone and build
-git clone <repository>
+git clone git@github.com:sub0xdai/synapse_mcp.git
+
 cd synapse_mcp
 
 # Start services in background

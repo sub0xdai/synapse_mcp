@@ -15,6 +15,7 @@ struct RuleFrontmatter {
     metadata: HashMap<String, serde_yaml::Value>,
 }
 
+#[derive(Debug)]
 pub struct RuleParser {
     frontmatter_regex: Regex,
 }

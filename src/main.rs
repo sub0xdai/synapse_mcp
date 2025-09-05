@@ -4,18 +4,78 @@ use dotenv::dotenv;
 use anyhow::Context;
 use std::path::PathBuf;
 use std::process;
+use tracing::{info, error, warn, debug};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 mod cli;
+
+/// Initialize structured logging based on configuration
+fn init_logging(config: &Config) -> anyhow::Result<()> {
+    let level = config.logging.level.parse::<tracing::Level>()
+        .unwrap_or(tracing::Level::INFO);
+    
+    let env_filter = EnvFilter::from_default_env()
+        .add_directive(level.into())
+        .add_directive("synapse_mcp=debug".parse().unwrap())
+        .add_directive("tower_http=info".parse().unwrap());
+    
+    let subscriber = tracing_subscriber::registry()
+        .with(env_filter);
+    
+    match config.logging.format.as_str() {
+        "json" => {
+            let layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_current_span(false)
+                .with_span_list(true);
+            subscriber.with(layer).init();
+        }
+        "compact" => {
+            let layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_thread_ids(true);
+            subscriber.with(layer).init();
+        }
+        _ => { // "pretty" or default
+            let layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_thread_ids(false);
+            subscriber.with(layer).init();
+        }
+    }
+    
+    info!("🔧 Logging initialized with level: {}", level);
+    debug!("📊 Logging format: {}, target: {}", config.logging.format, config.logging.target);
+    
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
     
+    // Load configuration early for logging initialization
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Failed to load configuration: {}", e);
+            process::exit(1);
+        }
+    };
+    
+    // Initialize structured logging
+    if let Err(e) = init_logging(&config) {
+        eprintln!("Failed to initialize logging: {}", e);
+        process::exit(1);
+    }
+    
     let matches = build_cli().get_matches();
     
     if let Err(e) = run_command(matches).await {
-        eprintln!("Error: {}", e);
+        error!("Application error: {}", e);
         process::exit(1);
     }
 }
@@ -278,8 +338,8 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             match synapse_mcp::RuleGraph::from_project(&current_dir) {
                 Ok(graph) => Some(graph),
                 Err(e) => {
-                    eprintln!("⚠️  Failed to load rule graph: {}", e);
-                    eprintln!("   Continuing without rule enforcement");
+                    warn!("Failed to load rule graph: {}", e);
+                    warn!("Continuing without rule enforcement");
                     None
                 }
             }
@@ -310,8 +370,8 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             }
             let enable_enforcer = sub_matches.get_flag("enable-enforcer");
             
-            println!("🚀 Starting Synapse MCP server on {}:{}", config.server.host, config.server.port);
-            println!("📊 Connecting to Neo4j at {}", config.neo4j.uri);
+            info!("🚀 Starting Synapse MCP server on {}:{}", config.server.host, config.server.port);
+            info!("📊 Connecting to Neo4j at {}", config.neo4j.uri);
             
             // Connect to Neo4j
             let graph_conn = graph::connect(&config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await
@@ -325,16 +385,16 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             
             // Add PatternEnforcer if requested
             if enable_enforcer {
-                println!("🔧 Initializing PatternEnforcer...");
+                info!("🔧 Initializing PatternEnforcer...");
                 let current_dir = std::env::current_dir()?;
                 match PatternEnforcer::from_project(&current_dir) {
                     Ok(enforcer) => {
-                        println!("✅ PatternEnforcer initialized with rule enforcement endpoints");
+                        info!("✅ PatternEnforcer initialized with rule enforcement endpoints");
                         config_builder = config_builder.enforcer(enforcer);
                     }
                     Err(e) => {
-                        eprintln!("⚠️  Failed to initialize PatternEnforcer: {}", e);
-                        eprintln!("   Starting server without rule enforcement");
+                        warn!("Failed to initialize PatternEnforcer: {}", e);
+                        warn!("Starting server without rule enforcement");
                     }
                 }
             }
@@ -366,9 +426,9 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
 }
 
 async fn run_demo() {
-    println!("🧠 Synapse MCP Demonstration");
-    println!("============================");
-    println!();
+    info!("🧠 Synapse MCP Demonstration");
+    info!("============================");
+    info!("");
 
     // Connect to graph (using stub implementation)
     println!("1. Connecting to knowledge graph...");

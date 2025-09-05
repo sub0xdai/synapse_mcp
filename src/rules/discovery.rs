@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+#[derive(Debug)]
 pub struct RuleDiscovery;
 
 impl RuleDiscovery {

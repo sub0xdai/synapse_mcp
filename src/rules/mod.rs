@@ -7,6 +7,7 @@ use crate::models::{RuleSet, CompositeRules};
 use std::path::PathBuf;
 
 /// Main interface for rule system
+#[derive(Debug)]
 pub struct RuleSystem {
     discovery: RuleDiscovery,
     pub parser: RuleParser,

@@ -16,3 +16,8 @@ port = 8080
 [runtime]
 verbose = false
 context_file = ".synapse_context"
+
+[logging]
+level = "info"
+format = "pretty"  # options: pretty, json, compact
+target = "stdout"  # options: stdout, stderr

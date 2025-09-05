@@ -19,6 +19,7 @@ use std::path::PathBuf;
 /// * Construction: O(n * m) where n = number of directories, m = average rules per directory
 /// * Rule lookup: O(d * r) where d = directory depth, r = rules per directory  
 /// * Memory usage: O(total rules) - rules are shared via Arc when possible
+#[derive(Debug)]
 pub struct RuleGraph {
     /// Maps file paths to their RuleSet
     rule_sets: HashMap<PathBuf, RuleSet>,

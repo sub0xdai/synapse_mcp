@@ -9,6 +9,7 @@ pub struct Config {
     pub neo4j: Neo4jConfig,
     pub server: ServerConfig,
     pub runtime: RuntimeConfig,
+    pub logging: LoggingConfig,
 }
 
 /// Neo4j database configuration
@@ -36,12 +37,21 @@ pub struct RuntimeConfig {
     pub context_file: PathBuf,
 }
 
+/// Logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    pub level: String,
+    pub format: String,
+    pub target: String,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             neo4j: Neo4jConfig::default(),
             server: ServerConfig::default(),
             runtime: RuntimeConfig::default(),
+            logging: LoggingConfig::default(),
         }
     }
 }
@@ -73,6 +83,16 @@ impl Default for RuntimeConfig {
         Self {
             verbose: false,
             context_file: PathBuf::from(".synapse_context"),
+        }
+    }
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            format: "pretty".to_string(), // pretty, json, compact
+            target: "stdout".to_string(), // stdout, stderr
         }
     }
 }
@@ -155,6 +175,11 @@ impl Config {
             runtime: RuntimeConfig {
                 verbose: true,
                 context_file: PathBuf::from("/tmp/test_context"),
+            },
+            logging: LoggingConfig {
+                level: "debug".to_string(),
+                format: "pretty".to_string(),
+                target: "stdout".to_string(),
             },
         }
     }
