@@ -152,6 +152,65 @@ fn build_cli() -> Command {
                 )
         )
         .subcommand(
+            Command::new("check")
+                .about("Check files against synapse rules (Write Hook)")
+                .long_about("Enforces FORBIDDEN and REQUIRED rules against specified files. Used by pre-commit hooks.")
+                .arg(
+                    Arg::new("files")
+                        .help("Files to check against rules")
+                        .required(true)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .short('v')
+                        .long("verbose")
+                        .help("Show detailed checking information")
+                        .action(clap::ArgAction::SetTrue)
+                )
+                .arg(
+                    Arg::new("dry-run")
+                        .long("dry-run")
+                        .help("Parse and check files but don't enforce (exit 0)")
+                        .action(clap::ArgAction::SetTrue)
+                )
+        )
+        .subcommand(
+            Command::new("enforce-context")
+                .about("Generate rule context for AI assistant (Read Hook)")
+                .long_about("Provides structured rule information for a file path to guide AI development.")
+                .arg(
+                    Arg::new("path")
+                        .help("File path to get rules for")
+                        .required(true)
+                        .index(1)
+                        .value_parser(clap::value_parser!(PathBuf))
+                )
+                .arg(
+                    Arg::new("format")
+                        .short('f')
+                        .long("format")
+                        .help("Output format")
+                        .value_parser(["markdown", "json", "plain"])
+                        .default_value("markdown")
+                )
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .help("Output to file instead of stdout")
+                        .value_parser(clap::value_parser!(String))
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .short('v')
+                        .long("verbose")
+                        .help("Show detailed context generation information")
+                        .action(clap::ArgAction::SetTrue)
+                )
+        )
+        .subcommand(
             Command::new("status")
                 .about("Check system status and health")
                 .arg(
@@ -223,6 +282,12 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
                     return Err(anyhow::anyhow!("Failed to connect to Neo4j: {}", e));
                 }
             }
+        }
+        Some(("check", sub_matches)) => {
+            cli::commands::check::handle_check(sub_matches).await?
+        }
+        Some(("enforce-context", sub_matches)) => {
+            cli::commands::enforce_context::handle_enforce_context(sub_matches).await?
         }
         Some(("status", sub_matches)) => {
             cli::commands::status::handle_status(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
