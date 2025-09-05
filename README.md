@@ -1,338 +1,104 @@
-# Synapse AI Workspace Framework
 
-**Transform your codebase into an AI-readable knowledge base that actively guides development**
+# Synapse
 
-Synapse is a comprehensive AI workspace framework that automatically builds intelligent project context from your documentation, enabling AI coding assistants like Claude Code to provide highly relevant, project-specific guidance.
+A CLI tool that builds an AI-readable knowledge base from your project's documentation to provide context for coding assistants and enforce local standards.
 
-## 🚀 Quick Start for Claude Code
+## Core Features
 
-### Option 1: One-Command Setup (Recommended)
-```bash
-# Build and initialize the workspace
-cargo build --release
-./scripts/setup-hooks.sh
+  * **AI Context Generation**: Creates context files from your documentation for AI assistants like Claude.
+  * **Rule Enforcement**: Validates code against project-specific standards using a built-in engine.
+  * **Project Scaffolding**: Initializes a `.synapse/` directory with templates for rules, architecture, and decisions.
+  * **Git Integration**: Automates rule checking and context updates via pre-commit hooks.
 
-# Start coding with AI context and rule enforcement!
-./target/release/synapse context --scope=all
-```
+-----
 
-### Option 2: Step-by-Step Setup
-```bash
-# 1. Build the Synapse CLI
-cargo build --release
+## Getting Started
 
-# 2. Initialize your project workspace
-./target/release/synapse_mcp init MyProject --template=rust
+### 1\. Installation
 
-# 3. Install automation hooks (optional but recommended)
-./target/release/synapse_mcp init --hooks
+First, clone the repository and build the binary using Cargo.
 
-# 4. Generate AI context for Claude
-./target/release/synapse_mcp context --scope=all
-```
-
-## 📋 Claude Code Integration Guide
-
-### Step 1: Install & Build Synapse
 ```bash
 git clone <your-synapse-repo>
-cd synapse_mcp
+cd synapse
 cargo build --release
 
-# Add to your PATH (optional)
+# Optional: Add the binary to your system's PATH
 export PATH="$PWD/target/release:$PATH"
 ```
 
-### Step 2: Initialize Your Project
-```bash
-# In your project directory
-synapse init --template=rust  # or python, typescript, generic
+### 2\. Initialize Your Project
 
-# This creates:
-# .synapse/rules/           - Coding standards & guidelines  
-# .synapse/architecture/    - System design documentation
-# .synapse/decisions/       - Architecture decision records
-# .synapse/components/      - Component specifications
+Navigate to your target project's directory and run the `init` command. This creates a `.synapse/` directory with documentation templates.
+
+```bash
+# In your project's root directory
+synapse init --template=rust
 ```
 
-### Step 3: Fill in Your Project Documentation
-Edit the generated templates in `.synapse/` with your project-specific information:
+Available templates include `rust`, `python`, `typescript`, and `generic`.
+
+### 3\. Populate Your Documentation
+
+Edit the generated Markdown templates inside the `.synapse/` directory with your project's specific standards, architecture, and decisions.
 
 ```bash
-# Edit the key files:
 $EDITOR .synapse/rules/coding_standards.md
-$EDITOR .synapse/architecture/overview.md  
-$EDITOR .synapse/rules/testing_strategy.md
+$EDITOR .synapse/architecture/overview.md
 ```
 
-**Example coding standards template:**
-```yaml
----
-mcp: synapse
-type: rule
-title: "MyProject Coding Standards"
-tags: ["rust", "standards", "performance"]
----
+### 4\. Generate AI Context
 
-# MyProject Coding Standards
-
-## Performance Requirements
-- All API responses must complete within 100ms
-- Database queries must use connection pooling
-- Memory usage should not exceed 512MB under normal load
-
-## Error Handling
-- Use `anyhow::Result` for application errors
-- Never use `unwrap()` in production code
-- Log all errors with structured logging
-```
-
-### Step 4: Generate Context for Claude Code
-```bash
-# Generate comprehensive context
-synapse context --scope=all -o .synapse_context
-
-# Or generate focused context for specific tasks:
-synapse context --scope=test -o .synapse_test_context     # Testing context
-synapse context --scope=api -o .synapse_api_context       # API development  
-synapse context --scope=rules -o .synapse_rules_context   # Coding standards
-```
-
-### Step 5: Use in Claude Code Sessions
-
-When starting a Claude Code session, the generated context file (`.synapse_context`) will be automatically loaded, providing Claude with:
-
-- ✅ **Project-specific coding standards**
-- ✅ **Architecture decisions and constraints** 
-- ✅ **Testing requirements and patterns**
-- ✅ **Performance guidelines and benchmarks**
-- ✅ **Security practices and requirements**
-
-## 🎯 Advanced Usage
-
-### Rule Enforcement & Automation
-Synapse includes powerful rule enforcement through the PatternEnforcer system:
+Run the `context` command to generate the `.synapse_context` file that your AI assistant will use.
 
 ```bash
-# Setup complete automation (pre-commit + Claude context)
+synapse context --scope=all
+```
+
+### 5\. (Optional) Setup Git Hooks
+
+Automate rule enforcement on commit and keep your AI context up-to-date.
+
+```bash
 ./scripts/setup-hooks.sh
-
-# Check files against rules manually
-synapse check --files src/main.rs src/lib.rs
-
-# Generate rule context for AI assistant
-synapse enforce-context src/main.rs --format markdown
-
-# Start MCP server with rule enforcement
-synapse serve --enable-enforcer --port 8080
 ```
 
-### Git Hook Integration
-Automatic rule enforcement and context updates:
-```bash
-# Rules are enforced automatically on commit
-git add src/violating-code.rs
-git commit -m "Fix violations"  # Will block if rules violated
+-----
 
-# Context auto-updates for Claude
-./scripts/claude-context-hook.sh context
-```
+## Usage
 
-### Task-Specific Contexts
-Generate focused context for specific development tasks:
+Here are the main commands for operating Synapse.
 
-```bash
-# API development context
-synapse context --scope=api --format=markdown
+| Command | Description |
+| :--- | :--- |
+| `synapse init` | Initializes a `.synapse/` workspace in the current directory. |
+| `synapse context` | Generates an AI context file from documentation. |
+| `synapse check` | Checks specified files against the defined rules. |
+| `synapse query` | Asks a question of the project's knowledge base. |
+| `synapse serve` | Starts the MCP server with API endpoints for enforcement. |
+| `synapse status` | Displays the status of the workspace and its components. |
 
-# Testing and quality context  
-synapse context --scope=test --format=json
+-----
 
-# Architecture and design context
-synapse context --scope=architecture --format=plain
-```
+## Configuration
 
-### Project Health Monitoring
-```bash
-# Check system status
-synapse status --verbose
+Synapse is configured through two primary methods:
 
-# Query your knowledge base
-synapse query "What are our performance requirements?"
-synapse query "How should I handle errors in this project?"
-```
+1.  **Documents**: All `.md` files in the `.synapse/` directory are parsed. They must contain YAML frontmatter with `mcp: synapse` and a `type` field (`rule`, `architecture`, etc.).
+2.  **Environment Variables**: Optional variables for advanced configuration.
+      * `NEO4J_URI`: URI for the Neo4j database connection.
+      * `SYNAPSE_VERBOSE`: Set to `true` for detailed logging.
+      * `SYNAPSE_CONTEXT_FILE`: The default output name for the context file.
 
-## 🏗️ Architecture
+-----
 
-### Core Components
-- **Unified CLI**: Single `synapse` command for all operations
-- **PatternEnforcer**: Real-time rule validation and context generation
-- **RuleGraph**: Intelligent rule inheritance and relationship tracking
-- **MCP Server**: High-performance API with enforcement endpoints
-- **Hook System**: Automated pre-commit enforcement and Claude integration
-- **Knowledge Graph**: Optional Neo4j integration for advanced querying
+## Architecture
 
-### Data Flow
-```
-Write Path (Enforcement):
-Developer → git commit → pre-commit hook → PatternEnforcer → Rule Validation
+Synapse works by parsing Markdown documents into an in-memory **RuleGraph**. This graph understands the relationships and inheritance between your project's standards.
 
-Read Path (AI Context):
-Claude Code → Context Hook → MCP Server → PatternEnforcer → Rule Context
-```
+The **PatternEnforcer** engine then uses this graph for two purposes:
 
-### PatternEnforcer Architecture
-```
-.synapse.md files → RuleGraph → CompositeRules → PatternEnforcer
-                                      ↓              ↓
-                                 Inheritance    Enforcement
-                                 Resolution     & Context
-```
+  * **Write Path (Enforcement)**: A `git commit` triggers a hook that uses the engine to validate code changes.
+  * **Read Path (AI Context)**: A context hook or manual command uses the engine to generate a summary of relevant rules for an AI assistant.
 
-## 🎨 Available Templates
-
-### Rust Projects (`--template=rust`)
-- Rust-specific coding standards
-- Performance optimization guidelines  
-- Error handling best practices
-- Security and memory safety rules
-
-### Python Projects (`--template=python`)
-- PEP 8 compliance guidelines
-- Type hint requirements
-- Virtual environment management
-- Testing with pytest patterns
-
-### TypeScript Projects (`--template=typescript`)  
-- ESLint and Prettier configurations
-- Type definitions and interfaces
-- Bundle optimization guidelines
-- Modern testing patterns
-
-### Generic Projects (`--template=generic`)
-- Universal coding standards
-- Architecture documentation templates
-- Testing strategy frameworks
-- Decision record (ADR) templates
-
-## 📊 Context Scopes
-
-| Scope | Description | Best For |
-|-------|-------------|----------|
-| `all` | Complete project context | General development, onboarding |
-| `rules` | Coding standards & guidelines | Code review, standards enforcement |
-| `architecture` | System design & decisions | Architecture planning, refactoring |
-| `test` | Testing strategies & patterns | Writing tests, QA work |
-| `api` | API design & documentation | Backend development, API design |
-| `security` | Security practices & requirements | Security review, compliance |
-
-## ⚡ Performance
-
-- **Indexing**: <500ms for typical documentation sets
-- **Context Generation**: <200ms for focused scopes
-- **Parallel Processing**: Automatic optimization for large codebases
-- **Smart Caching**: Context regenerated only when documents change
-
-## 🔧 Configuration
-
-### Environment Variables
-```bash
-# Optional Neo4j integration
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
-
-# Synapse configuration
-SYNAPSE_VERBOSE=true          # Enable detailed logging
-SYNAPSE_CONTEXT_FILE=.synapse_context  # Default context file name
-```
-
-### Document Format
-All Synapse documents use YAML frontmatter for metadata:
-
-```yaml
----
-mcp: synapse              # Required: marks document for Synapse
-type: rule                # Document type (rule, architecture, decision, component)
-title: "Document Title"   # Human-readable title
-tags: ["tag1", "tag2"]   # Categorization tags
----
-
-# Your documentation content here
-```
-
-## 🤖 Claude Code Tips
-
-### Best Practices
-1. **Start each session** with `synapse context --scope=all` for comprehensive guidance
-2. **Use focused scopes** when working on specific features (e.g., `--scope=test` for testing)
-3. **Update documentation templates** as your project evolves
-4. **Enable git hooks** for automatic context updates
-
-### Common Workflows
-```bash
-# Starting API development
-synapse context --scope=api
-# Claude now knows your API standards, error handling, and performance requirements
-
-# Code review preparation  
-synapse context --scope=rules
-# Claude can check code against your specific standards
-
-# Architecture planning
-synapse context --scope=architecture  
-# Claude understands your system design and constraints
-```
-
-## 🚨 Troubleshooting
-
-### Context Not Loading
-```bash
-# Check system status
-synapse status --verbose
-
-# Regenerate context
-synapse context --scope=all --format=markdown
-
-# Verify file exists
-ls -la .synapse_context
-```
-
-### Performance Issues
-```bash
-# Use parallel processing for large doc sets
-synapse index docs/*.md --parallel 8
-
-# Check indexing performance
-SYNAPSE_VERBOSE=1 synapse context --scope=all
-```
-
-### Template Issues
-```bash
-# Re-initialize templates
-synapse init --template=rust  # Regenerates templates
-
-# Check template structure
-find .synapse -name "*.md" -exec head -10 {} \;
-```
-
-## 🎉 Success Indicators
-
-You'll know Synapse is working when Claude Code:
-- ✅ **Follows your coding standards** automatically
-- ✅ **Suggests project-appropriate patterns** and solutions
-- ✅ **Remembers architectural decisions** and constraints
-- ✅ **Applies consistent error handling** and testing approaches
-- ✅ **Respects performance requirements** and security practices
-
-## 💡 Pro Tips
-
-1. **Start simple**: Use generic templates first, then customize
-2. **Be specific**: Include exact performance numbers, not vague requirements
-3. **Update regularly**: Keep documentation current with code changes
-4. **Use scopes**: Generate focused context for specific development tasks
-5. **Enable automation**: Git hooks ensure context stays synchronized
-
----
-
-**Ready to transform your AI coding experience?** Run `synapse init` in your project directory and watch Claude Code become your perfect coding partner! 🚀
+For a more detailed breakdown, see `architecture.md`.

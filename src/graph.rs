@@ -7,6 +7,29 @@ pub struct Graph {
     client: Neo4jGraph,
 }
 
+impl Graph {
+    #[cfg(test)]
+    pub fn new_mock() -> Result<Self> {
+        // For testing, we create a mock graph that doesn't actually connect to Neo4j
+        // This will be replaced with a proper test database setup in Phase 4
+        use neo4rs::ConfigBuilder;
+        
+        // Create a placeholder config - in real tests this would be a test DB
+        let config = ConfigBuilder::default()
+            .uri("bolt://localhost:7687")
+            .user("test")
+            .password("test")
+            .db("test")
+            .build()
+            .map_err(|e| SynapseError::Neo4j(e))?;
+            
+        // This is a mock - we'll implement proper test infrastructure later
+        // For now, we'll create a Graph with a placeholder client
+        // The actual tests will be skipped until we have test infrastructure
+        Err(SynapseError::Validation("Mock Graph - tests will be skipped until test DB is available".to_string()))
+    }
+}
+
 pub async fn connect(uri: &str, user: &str, password: &str) -> Result<Graph> {
     // Build Neo4j configuration
     let config = ConfigBuilder::default()
