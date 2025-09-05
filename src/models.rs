@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
+use regex::Regex;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum NodeType {
@@ -80,6 +82,28 @@ pub struct RuleNode {
     pub rule_set: RuleSet,
     pub parent: Option<PathBuf>,
     pub children: Vec<PathBuf>,
+}
+
+// Phase 1: Performance-optimized structures
+
+#[derive(Debug, Clone)]
+pub enum PatternMatcher {
+    Regex(Regex),
+    Literal(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledRule {
+    pub rule: Arc<Rule>,
+    pub matcher: PatternMatcher,
+}
+
+#[derive(Debug, Clone)]
+pub struct Violation {
+    pub file_path: PathBuf,
+    pub rule: Arc<Rule>,
+    pub line_number: Option<usize>,
+    pub line_content: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -280,6 +304,55 @@ impl Default for CompositeRules {
     }
 }
 
+// Phase 1: New implementations
+
+impl CompiledRule {
+    pub fn new(rule: Rule, matcher: PatternMatcher) -> Self {
+        Self {
+            rule: Arc::new(rule),
+            matcher,
+        }
+    }
+
+    pub fn from_rule(rule: Rule) -> Self {
+        let matcher = match Regex::new(&rule.pattern) {
+            Ok(regex) => PatternMatcher::Regex(regex),
+            Err(_) => PatternMatcher::Literal(rule.pattern.clone()),
+        };
+        Self::new(rule, matcher)
+    }
+}
+
+impl Violation {
+    pub fn new(
+        file_path: PathBuf,
+        rule: Arc<Rule>,
+        line_number: Option<usize>,
+        line_content: Option<String>,
+    ) -> Self {
+        Self {
+            file_path,
+            rule,
+            line_number,
+            line_content,
+        }
+    }
+
+    pub fn from_compiled_rule(
+        file_path: PathBuf,
+        compiled_rule: &CompiledRule,
+        line_number: Option<usize>,
+        line_content: Option<String>,
+    ) -> Self {
+        Self::new(
+            file_path,
+            compiled_rule.rule.clone(),
+            line_number,
+            line_content,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +487,90 @@ mod tests {
         
         assert_ne!(inherits, overrides);
         assert_ne!(inherits, EdgeType::RelatesTo);
+    }
+
+    // Phase 1: New tests
+    
+    #[test]
+    fn test_compiled_rule_with_valid_regex() {
+        let rule = Rule::new(
+            "no-println".to_string(),
+            RuleType::Forbidden,
+            r"println!\(".to_string(),
+            "Use logging instead of println!".to_string(),
+        );
+
+        let compiled_rule = CompiledRule::from_rule(rule);
+        
+        match compiled_rule.matcher {
+            PatternMatcher::Regex(_) => {}, // Success
+            PatternMatcher::Literal(_) => panic!("Expected regex, got literal"),
+        }
+    }
+    
+    #[test]
+    fn test_compiled_rule_with_invalid_regex() {
+        let rule = Rule::new(
+            "bad-pattern".to_string(),
+            RuleType::Forbidden,
+            "[invalid regex".to_string(), // Invalid regex
+            "This has a bad pattern".to_string(),
+        );
+
+        let compiled_rule = CompiledRule::from_rule(rule);
+        
+        match compiled_rule.matcher {
+            PatternMatcher::Literal(pattern) => {
+                assert_eq!(pattern, "[invalid regex");
+            },
+            PatternMatcher::Regex(_) => panic!("Expected literal fallback, got regex"),
+        }
+    }
+    
+    #[test]
+    fn test_violation_creation() {
+        let rule = Rule::new(
+            "test-rule".to_string(),
+            RuleType::Required,
+            "test-pattern".to_string(),
+            "test message".to_string(),
+        );
+        
+        let file_path = PathBuf::from("test.rs");
+        let violation = Violation::new(
+            file_path.clone(),
+            Arc::new(rule.clone()),
+            Some(42),
+            Some("test line".to_string()),
+        );
+        
+        assert_eq!(violation.file_path, file_path);
+        assert_eq!(violation.rule.name, "test-rule");
+        assert_eq!(violation.line_number, Some(42));
+        assert_eq!(violation.line_content, Some("test line".to_string()));
+    }
+    
+    #[test]
+    fn test_violation_from_compiled_rule() {
+        let rule = Rule::new(
+            "compiled-test".to_string(),
+            RuleType::Forbidden,
+            "bad_pattern".to_string(),
+            "Don't use bad_pattern".to_string(),
+        );
+        
+        let compiled_rule = CompiledRule::from_rule(rule);
+        let file_path = PathBuf::from("src/main.rs");
+        
+        let violation = Violation::from_compiled_rule(
+            file_path.clone(),
+            &compiled_rule,
+            Some(100),
+            Some("let x = bad_pattern();".to_string()),
+        );
+        
+        assert_eq!(violation.file_path, file_path);
+        assert_eq!(violation.rule.name, "compiled-test");
+        assert_eq!(violation.line_number, Some(100));
     }
 }

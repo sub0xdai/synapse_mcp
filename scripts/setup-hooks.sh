@@ -275,7 +275,8 @@ main() {
             log_info "Cleaning up hooks and temporary files..."
             pre-commit uninstall 2>/dev/null || true
             rm -f .synapse_context
-            pkill -f "synapse.*serve" 2>/dev/null || true
+            SYNAPSE_BINARY_SAFE=$(printf '%q' "synapse")
+            pkill -f "^${SYNAPSE_BINARY_SAFE}.*serve$" 2>/dev/null || true
             log_success "Cleanup complete"
             ;;
         "status")

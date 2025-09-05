@@ -7,6 +7,7 @@ set -e
 
 # Configuration
 SYNAPSE_BINARY="${SYNAPSE_BINARY:-synapse}"
+SYNAPSE_BINARY_SAFE=$(printf '%q' "$SYNAPSE_BINARY")
 SYNAPSE_MCP_URL="${SYNAPSE_MCP_URL:-http://localhost:8080}"
 CONTEXT_FILE="${SYNAPSE_CONTEXT_FILE:-.synapse_context}"
 SYNAPSE_VERBOSE="${SYNAPSE_VERBOSE:-false}"
@@ -56,7 +57,7 @@ start_server_if_needed() {
         fi
         
         # Kill any existing background server
-        pkill -f "$SYNAPSE_BINARY.*serve" 2>/dev/null || true
+        pkill -f "^${SYNAPSE_BINARY_SAFE}.*serve$" 2>/dev/null || true
         
         # Start server in background with rule enforcement
         nohup $SYNAPSE_BINARY serve --enable-enforcer --port 8080 >/dev/null 2>&1 &
@@ -181,7 +182,7 @@ main() {
             fi
             ;;
         "stop")
-            pkill -f "$SYNAPSE_BINARY.*serve" 2>/dev/null || true
+            pkill -f "^${SYNAPSE_BINARY_SAFE}.*serve$" 2>/dev/null || true
             log_success "MCP server stopped"
             ;;
         "status")
@@ -196,7 +197,7 @@ main() {
             fi
             ;;
         "clean")
-            pkill -f "$SYNAPSE_BINARY.*serve" 2>/dev/null || true
+            pkill -f "^${SYNAPSE_BINARY_SAFE}.*serve$" 2>/dev/null || true
             rm -f "$CONTEXT_FILE"
             log_success "Cleaned up server and context file"
             ;;

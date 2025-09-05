@@ -1,6 +1,7 @@
 use clap::{Arg, Command};
 use synapse_mcp::{graph, mcp_server, PatternEnforcer};
 use dotenv::dotenv;
+use anyhow::Context;
 use std::path::PathBuf;
 use std::process;
 
@@ -256,9 +257,12 @@ fn build_cli() -> Command {
 }
 
 async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
-    let neo4j_uri = matches.get_one::<String>("neo4j-uri").unwrap();
-    let neo4j_user = matches.get_one::<String>("neo4j-user").unwrap();
-    let neo4j_password = matches.get_one::<String>("neo4j-password").unwrap();
+    let neo4j_uri = matches.get_one::<String>("neo4j-uri")
+        .context("neo4j-uri argument is required")?;
+    let neo4j_user = matches.get_one::<String>("neo4j-user")
+        .context("neo4j-user argument is required")?;
+    let neo4j_password = matches.get_one::<String>("neo4j-password")
+        .context("neo4j-password argument is required")?;
 
     match matches.subcommand() {
         Some(("init", sub_matches)) => {
@@ -274,8 +278,10 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             cli::commands::query::handle_query(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
         }
         Some(("serve", sub_matches)) => {
-            let port = *sub_matches.get_one::<u16>("port").unwrap();
-            let host = sub_matches.get_one::<String>("host").unwrap();
+            let port = *sub_matches.get_one::<u16>("port")
+                .context("port argument is required")?;
+            let host = sub_matches.get_one::<String>("host")
+                .context("host argument is required")?;
             let enable_enforcer = sub_matches.get_flag("enable-enforcer");
             
             println!("🚀 Starting Synapse MCP server on {}:{}", host, port);

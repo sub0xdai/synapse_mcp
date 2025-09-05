@@ -1,4 +1,4 @@
-use crate::{RuleGraph, RuleType, CompositeRules, Result, SynapseError};
+use crate::{RuleGraph, RuleType, CompositeRules, Result, SynapseError, Violation, CompiledRule, check_rules};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -18,10 +18,36 @@ pub struct EnforceCheckRequest {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EnforceCheckResponse {
     pub success: bool,
-    pub violations: Vec<RuleViolation>,
+    pub violations: Vec<RuleViolationDto>,
     pub files_checked: usize,
     pub rules_applied: usize,
     pub error: Option<String>,
+}
+
+/// DTO for rule violations (for serialization)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuleViolationDto {
+    pub file_path: PathBuf,
+    pub rule_name: String,
+    pub rule_type: RuleType,
+    pub pattern: String,
+    pub message: String,
+    pub line_number: Option<usize>,
+    pub line_content: Option<String>,
+}
+
+impl From<&Violation> for RuleViolationDto {
+    fn from(violation: &Violation) -> Self {
+        Self {
+            file_path: violation.file_path.clone(),
+            rule_name: violation.rule.name.clone(),
+            rule_type: violation.rule.rule_type.clone(),
+            pattern: violation.rule.pattern.clone(),
+            message: violation.rule.message.clone(),
+            line_number: violation.line_number,
+            line_content: violation.line_content.clone(),
+        }
+    }
 }
 
 /// Request for rule context (Read Hook)
@@ -42,17 +68,6 @@ pub struct EnforceContextResponse {
     pub error: Option<String>,
 }
 
-/// Rule violation found during checking
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RuleViolation {
-    pub file_path: PathBuf,
-    pub rule_name: String,
-    pub rule_type: RuleType,
-    pub pattern: String,
-    pub message: String,
-    pub line_number: Option<usize>,
-    pub line_content: Option<String>,
-}
 
 /// Rule information formatted for AI consumption
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -118,9 +133,16 @@ impl PatternEnforcer {
             let content = std::fs::read_to_string(file_path)
                 .map_err(|e| SynapseError::Io(e))?;
             
-            // Check file against rules
-            let violations = self.check_file_against_rules(file_path, &content, &composite_rules)?;
-            all_violations.extend(violations);
+            // Convert rules to CompiledRule format for enforcement
+            let compiled_rules: Vec<CompiledRule> = composite_rules.applicable_rules
+                .iter()
+                .map(|rule| CompiledRule::from_rule(rule.clone()))
+                .collect();
+            
+            // Check file against rules using unified enforcement
+            let violations = check_rules(file_path, &content, &compiled_rules)?;
+            let violation_dtos: Vec<RuleViolationDto> = violations.iter().map(|v| v.into()).collect();
+            all_violations.extend(violation_dtos);
         }
         
         let success = dry_run || all_violations.is_empty();
@@ -204,56 +226,7 @@ impl PatternEnforcer {
         })
     }
     
-    /// Check a single file against its applicable rules
-    fn check_file_against_rules(
-        &self,
-        file_path: &PathBuf,
-        content: &str,
-        composite_rules: &CompositeRules,
-    ) -> Result<Vec<RuleViolation>> {
-        let mut violations = Vec::new();
-        let lines: Vec<&str> = content.lines().collect();
-        
-        for rule in &composite_rules.applicable_rules {
-            match rule.rule_type {
-                RuleType::Forbidden => {
-                    // Check if forbidden pattern exists
-                    for (line_num, line) in lines.iter().enumerate() {
-                        if line.contains(&rule.pattern) {
-                            violations.push(RuleViolation {
-                                file_path: file_path.clone(),
-                                rule_name: rule.name.clone(),
-                                rule_type: rule.rule_type.clone(),
-                                pattern: rule.pattern.clone(),
-                                message: rule.message.clone(),
-                                line_number: Some(line_num + 1),
-                                line_content: Some(line.to_string()),
-                            });
-                        }
-                    }
-                }
-                RuleType::Required => {
-                    // Check if required pattern is missing
-                    let pattern_found = content.contains(&rule.pattern);
-                    if !pattern_found {
-                        violations.push(RuleViolation {
-                            file_path: file_path.clone(),
-                            rule_name: rule.name.clone(),
-                            rule_type: rule.rule_type.clone(),
-                            pattern: rule.pattern.clone(),
-                            message: rule.message.clone(),
-                            line_number: None,
-                            line_content: None,
-                        });
-                    }
-                }
-                // Standard and Convention rules are suggestions, not enforced
-                RuleType::Standard | RuleType::Convention => continue,
-            }
-        }
-        
-        Ok(violations)
-    }
+    // Legacy check_file_against_rules function removed - now using unified enforcement::check_rules
     
     /// Format context as markdown for AI consumption
     fn format_context_markdown(

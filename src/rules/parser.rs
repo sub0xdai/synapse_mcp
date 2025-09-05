@@ -1,4 +1,4 @@
-use crate::models::{RuleSet, Rule, RuleType};
+use crate::models::{RuleSet, Rule, RuleType, CompiledRule};
 use regex::Regex;
 use serde_yaml;
 use std::collections::HashMap;
@@ -82,9 +82,9 @@ impl RuleParser {
         }
 
         // Parse markdown content for rules
-        let rules = self.extract_rules(&markdown_content)?;
-        for rule in rules {
-            rule_set = rule_set.add_rule(rule);
+        let compiled_rules = self.extract_compiled_rules(&markdown_content)?;
+        for compiled_rule in compiled_rules {
+            rule_set = rule_set.add_rule((*compiled_rule.rule).clone());
         }
 
         rule_set.validate()?;
@@ -102,29 +102,43 @@ impl RuleParser {
         }
     }
 
-    /// Extract rules from markdown content
-    fn extract_rules(&self, content: &str) -> crate::Result<Vec<Rule>> {
-        let mut rules = Vec::new();
+    /// Extract compiled rules from markdown content
+    fn extract_compiled_rules(&self, content: &str) -> crate::Result<Vec<CompiledRule>> {
+        let mut compiled_rules = Vec::new();
         
         // Simple rule extraction - look for specific patterns
         // This is a basic implementation, could be enhanced with more sophisticated parsing
         
         // Look for "FORBIDDEN" patterns
         if let Some(forbidden_rules) = self.extract_forbidden_rules(content) {
-            rules.extend(forbidden_rules);
+            for rule in forbidden_rules {
+                compiled_rules.push(CompiledRule::from_rule(rule));
+            }
         }
 
         // Look for "REQUIRED" patterns  
         if let Some(required_rules) = self.extract_required_rules(content) {
-            rules.extend(required_rules);
+            for rule in required_rules {
+                compiled_rules.push(CompiledRule::from_rule(rule));
+            }
         }
 
         // Look for "STANDARD" patterns
         if let Some(standard_rules) = self.extract_standard_rules(content) {
-            rules.extend(standard_rules);
+            for rule in standard_rules {
+                compiled_rules.push(CompiledRule::from_rule(rule));
+            }
         }
 
-        Ok(rules)
+        Ok(compiled_rules)
+    }
+
+    /// Extract rules from markdown content (legacy method for tests)
+    fn extract_rules(&self, content: &str) -> crate::Result<Vec<Rule>> {
+        let compiled_rules = self.extract_compiled_rules(content)?;
+        Ok(compiled_rules.into_iter()
+            .map(|cr| (*cr.rule).clone())
+            .collect())
     }
 
     fn extract_forbidden_rules(&self, content: &str) -> Option<Vec<Rule>> {
