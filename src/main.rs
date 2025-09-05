@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use synapse_mcp::{graph, mcp_server, indexer};
+use synapse_mcp::{graph, mcp_server, PatternEnforcer};
 use dotenv::dotenv;
 use std::path::PathBuf;
 use std::process;
@@ -150,6 +150,12 @@ fn build_cli() -> Command {
                         .help("Host to bind to")
                         .default_value("localhost")
                 )
+                .arg(
+                    Arg::new("enable-enforcer")
+                        .long("enable-enforcer")
+                        .help("Enable PatternEnforcer with rule enforcement endpoints")
+                        .action(clap::ArgAction::SetTrue)
+                )
         )
         .subcommand(
             Command::new("check")
@@ -270,13 +276,30 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
         Some(("serve", sub_matches)) => {
             let port = *sub_matches.get_one::<u16>("port").unwrap();
             let host = sub_matches.get_one::<String>("host").unwrap();
+            let enable_enforcer = sub_matches.get_flag("enable-enforcer");
             
             println!("🚀 Starting Synapse MCP server on {}:{}", host, port);
             println!("📊 Connecting to Neo4j at {}", neo4j_uri);
             
             match graph::connect(neo4j_uri, neo4j_user, neo4j_password).await {
                 Ok(graph_conn) => {
-                    mcp_server::start_server(graph_conn, port).await?
+                    if enable_enforcer {
+                        println!("🔧 Initializing PatternEnforcer...");
+                        let current_dir = std::env::current_dir()?;
+                        match PatternEnforcer::from_project(&current_dir) {
+                            Ok(enforcer) => {
+                                println!("✅ PatternEnforcer initialized with rule enforcement endpoints");
+                                mcp_server::start_server_with_enforcer(graph_conn, Some(enforcer), port).await?
+                            }
+                            Err(e) => {
+                                eprintln!("⚠️  Failed to initialize PatternEnforcer: {}", e);
+                                eprintln!("   Starting server without rule enforcement");
+                                mcp_server::start_server(graph_conn, port).await?
+                            }
+                        }
+                    } else {
+                        mcp_server::start_server(graph_conn, port).await?
+                    }
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!("Failed to connect to Neo4j: {}", e));

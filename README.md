@@ -10,10 +10,10 @@ Synapse is a comprehensive AI workspace framework that automatically builds inte
 ```bash
 # Build and initialize the workspace
 cargo build --release
-./target/release/synapse_mcp init --template=rust --hooks
+./scripts/setup-hooks.sh
 
-# Start coding with AI context!
-./target/release/synapse_mcp context --scope=all
+# Start coding with AI context and rule enforcement!
+./target/release/synapse context --scope=all
 ```
 
 ### Option 2: Step-by-Step Setup
@@ -110,15 +110,32 @@ When starting a Claude Code session, the generated context file (`.synapse_conte
 
 ## 🎯 Advanced Usage
 
-### Automatic Context Updates
-Enable git hooks for automatic context updates:
-```bash
-synapse init --hooks
+### Rule Enforcement & Automation
+Synapse includes powerful rule enforcement through the PatternEnforcer system:
 
-# Now context auto-updates on every commit!
-git add .synapse/rules/new-rule.md
-git commit -m "Add new performance rule"
-# Context automatically regenerated
+```bash
+# Setup complete automation (pre-commit + Claude context)
+./scripts/setup-hooks.sh
+
+# Check files against rules manually
+synapse check --files src/main.rs src/lib.rs
+
+# Generate rule context for AI assistant
+synapse enforce-context src/main.rs --format markdown
+
+# Start MCP server with rule enforcement
+synapse serve --enable-enforcer --port 8080
+```
+
+### Git Hook Integration
+Automatic rule enforcement and context updates:
+```bash
+# Rules are enforced automatically on commit
+git add src/violating-code.rs
+git commit -m "Fix violations"  # Will block if rules violated
+
+# Context auto-updates for Claude
+./scripts/claude-context-hook.sh context
 ```
 
 ### Task-Specific Contexts
@@ -149,17 +166,27 @@ synapse query "How should I handle errors in this project?"
 
 ### Core Components
 - **Unified CLI**: Single `synapse` command for all operations
-- **Project Templates**: Language-specific documentation scaffolding
-- **Smart Context Generation**: Scope-based filtering for relevant context
-- **Parallel Processing**: High-performance document indexing
+- **PatternEnforcer**: Real-time rule validation and context generation
+- **RuleGraph**: Intelligent rule inheritance and relationship tracking
+- **MCP Server**: High-performance API with enforcement endpoints
+- **Hook System**: Automated pre-commit enforcement and Claude integration
 - **Knowledge Graph**: Optional Neo4j integration for advanced querying
 
 ### Data Flow
 ```
-Documentation → Synapse Templates → AI Context → Claude Code
-     ↓              ↓                  ↓           ↓
-  .synapse/     Validation       .synapse_     Enhanced AI
-  templates      & Parsing        context      Guidance
+Write Path (Enforcement):
+Developer → git commit → pre-commit hook → PatternEnforcer → Rule Validation
+
+Read Path (AI Context):
+Claude Code → Context Hook → MCP Server → PatternEnforcer → Rule Context
+```
+
+### PatternEnforcer Architecture
+```
+.synapse.md files → RuleGraph → CompositeRules → PatternEnforcer
+                                      ↓              ↓
+                                 Inheritance    Enforcement
+                                 Resolution     & Context
 ```
 
 ## 🎨 Available Templates

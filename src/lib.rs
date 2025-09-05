@@ -11,4 +11,5 @@ pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, Compos
 pub use error::{SynapseError, Result};
 pub use rule_graph::{RuleGraph, RuleGraphStats};
 pub use rules::{RuleSystem};
+pub use mcp_server::{PatternEnforcer};
 
