@@ -3,17 +3,9 @@ pub mod pattern_enforcer;
 
 pub use pattern_enforcer::{
     PatternEnforcer,
-    EnforceCheckRequest,
-    EnforceCheckResponse, 
-    EnforceContextRequest,
-    EnforceContextResponse,
-    RulesForPathRequest,
-    RulesForPathResponse,
-    RuleViolation,
-    RuleContextInfo,
 };
 
-use crate::{graph, Result, SynapseError, NodeType};
+use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse};
 use axum::{
     extract::{State, Path},
     response::Json,
@@ -203,57 +195,31 @@ async fn handle_related_nodes(
 
 async fn handle_enforce_check(
     State(state): State<ServerState>,
-    Json(request): Json<EnforceCheckRequest>,
-) -> Json<EnforceCheckResponse> {
+    Json(request): Json<CheckRequest>,
+) -> Json<CheckResponse> {
     match &state.enforcer {
         Some(enforcer) => {
             match enforcer.check_files(request) {
                 Ok(response) => Json(response),
-                Err(e) => Json(EnforceCheckResponse {
-                    success: false,
-                    violations: Vec::new(),
-                    files_checked: 0,
-                    rules_applied: 0,
-                    error: Some(e.to_string()),
-                }),
+                Err(e) => Json(CheckResponse::error(e.to_string())),
             }
         }
-        None => Json(EnforceCheckResponse {
-            success: false,
-            violations: Vec::new(),
-            files_checked: 0,
-            rules_applied: 0,
-            error: Some("PatternEnforcer not available".to_string()),
-        }),
+        None => Json(CheckResponse::error("PatternEnforcer not available".to_string())),
     }
 }
 
 async fn handle_enforce_context(
     State(state): State<ServerState>,
-    Json(request): Json<EnforceContextRequest>,
-) -> Json<EnforceContextResponse> {
+    Json(request): Json<ContextRequest>,
+) -> Json<ContextResponse> {
     match &state.enforcer {
         Some(enforcer) => {
             match enforcer.generate_context(request) {
                 Ok(response) => Json(response),
-                Err(e) => Json(EnforceContextResponse {
-                    success: false,
-                    context: None,
-                    applicable_rules: Vec::new(),
-                    inheritance_chain: Vec::new(),
-                    overridden_rules: Vec::new(),
-                    error: Some(e.to_string()),
-                }),
+                Err(e) => Json(ContextResponse::error(e.to_string())),
             }
         }
-        None => Json(EnforceContextResponse {
-            success: false,
-            context: None,
-            applicable_rules: Vec::new(),
-            inheritance_chain: Vec::new(),
-            overridden_rules: Vec::new(),
-            error: Some("PatternEnforcer not available".to_string()),
-        }),
+        None => Json(ContextResponse::error("PatternEnforcer not available".to_string())),
     }
 }
 
@@ -265,24 +231,10 @@ async fn handle_rules_for_path(
         Some(enforcer) => {
             match enforcer.get_rules_for_path(request) {
                 Ok(response) => Json(response),
-                Err(e) => Json(RulesForPathResponse {
-                    success: false,
-                    path: std::path::PathBuf::new(),
-                    rules: Vec::new(),
-                    inheritance_chain: Vec::new(),
-                    overridden_rules: Vec::new(),
-                    error: Some(e.to_string()),
-                }),
+                Err(e) => Json(RulesForPathResponse::error(e.to_string())),
             }
         }
-        None => Json(RulesForPathResponse {
-            success: false,
-            path: std::path::PathBuf::new(),
-            rules: Vec::new(),
-            inheritance_chain: Vec::new(),
-            overridden_rules: Vec::new(),
-            error: Some("PatternEnforcer not available".to_string()),
-        }),
+        None => Json(RulesForPathResponse::error("PatternEnforcer not available".to_string())),
     }
 }
 

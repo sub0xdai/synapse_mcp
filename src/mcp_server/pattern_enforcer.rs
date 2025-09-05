@@ -1,5 +1,4 @@
-use crate::{RuleGraph, RuleType, CompositeRules, Result, SynapseError, Violation, CompiledRule, check_rules};
-use serde::{Deserialize, Serialize};
+use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, RuleViolationDto, RuleContextInfo, CheckData, CheckResultData, ContextData, ContextResultData, RulesForPathData, RulesForPathResultData, get_formatter};
 use std::path::PathBuf;
 
 /// PatternEnforcer integrates RuleGraph with MCP server for real-time rule enforcement
@@ -7,95 +6,6 @@ pub struct PatternEnforcer {
     rule_graph: RuleGraph,
 }
 
-/// Request to check files against rules (Write Hook)
-#[derive(Debug, Deserialize, Serialize)]
-pub struct EnforceCheckRequest {
-    pub files: Vec<PathBuf>,
-    pub dry_run: Option<bool>,
-}
-
-/// Response from rule checking
-#[derive(Debug, Deserialize, Serialize)]
-pub struct EnforceCheckResponse {
-    pub success: bool,
-    pub violations: Vec<RuleViolationDto>,
-    pub files_checked: usize,
-    pub rules_applied: usize,
-    pub error: Option<String>,
-}
-
-/// DTO for rule violations (for serialization)
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RuleViolationDto {
-    pub file_path: PathBuf,
-    pub rule_name: String,
-    pub rule_type: RuleType,
-    pub pattern: String,
-    pub message: String,
-    pub line_number: Option<usize>,
-    pub line_content: Option<String>,
-}
-
-impl From<&Violation> for RuleViolationDto {
-    fn from(violation: &Violation) -> Self {
-        Self {
-            file_path: violation.file_path.clone(),
-            rule_name: violation.rule.name.clone(),
-            rule_type: violation.rule.rule_type.clone(),
-            pattern: violation.rule.pattern.clone(),
-            message: violation.rule.message.clone(),
-            line_number: violation.line_number,
-            line_content: violation.line_content.clone(),
-        }
-    }
-}
-
-/// Request for rule context (Read Hook)
-#[derive(Debug, Deserialize, Serialize)]
-pub struct EnforceContextRequest {
-    pub path: PathBuf,
-    pub format: Option<String>,
-}
-
-/// Response with rule context for AI assistant
-#[derive(Debug, Deserialize, Serialize)]
-pub struct EnforceContextResponse {
-    pub success: bool,
-    pub context: Option<String>,
-    pub applicable_rules: Vec<RuleContextInfo>,
-    pub inheritance_chain: Vec<PathBuf>,
-    pub overridden_rules: Vec<String>,
-    pub error: Option<String>,
-}
-
-
-/// Rule information formatted for AI consumption
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct RuleContextInfo {
-    pub name: String,
-    pub rule_type: RuleType,
-    pub pattern: String,
-    pub message: String,
-    pub tags: Vec<String>,
-    pub enforcement_level: String,
-}
-
-/// Request to get rules for a specific path
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RulesForPathRequest {
-    pub path: PathBuf,
-}
-
-/// Response with rules applicable to a path
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RulesForPathResponse {
-    pub success: bool,
-    pub path: PathBuf,
-    pub rules: Vec<RuleContextInfo>,
-    pub inheritance_chain: Vec<PathBuf>,
-    pub overridden_rules: Vec<String>,
-    pub error: Option<String>,
-}
 
 impl PatternEnforcer {
     /// Create a new PatternEnforcer from a project directory
@@ -115,12 +25,12 @@ impl PatternEnforcer {
     }
     
     /// Check files against rules (implements Write Hook functionality)
-    pub fn check_files(&self, request: EnforceCheckRequest) -> Result<EnforceCheckResponse> {
+    pub fn check_files(&self, request: CheckRequest) -> Result<CheckResponse> {
         let mut all_violations = Vec::new();
         let mut total_rules_applied = 0;
-        let dry_run = request.dry_run.unwrap_or(false);
+        let dry_run = request.data.dry_run.unwrap_or(false);
         
-        for file_path in &request.files {
+        for file_path in &request.data.files {
             if !file_path.exists() {
                 continue;
             }
@@ -146,20 +56,26 @@ impl PatternEnforcer {
         }
         
         let success = dry_run || all_violations.is_empty();
-        
-        Ok(EnforceCheckResponse {
-            success,
+        let data = CheckResultData {
             violations: all_violations,
-            files_checked: request.files.len(),
+            files_checked: request.data.files.len(),
             rules_applied: total_rules_applied,
-            error: None,
+        };
+        
+        Ok(if success {
+            CheckResponse::success(data)
+        } else {
+            // Create a response that indicates failure but still has data
+            let mut response = CheckResponse::success(data);
+            response.success = false;
+            response
         })
     }
     
     /// Generate rule context for AI assistant (implements Read Hook functionality)
-    pub fn generate_context(&self, request: EnforceContextRequest) -> Result<EnforceContextResponse> {
-        let composite_rules = self.rule_graph.rules_for(&request.path)?;
-        let format = request.format.as_deref().unwrap_or("markdown");
+    pub fn generate_context(&self, request: ContextRequest) -> Result<ContextResponse> {
+        let composite_rules = self.rule_graph.rules_for(&request.data.path)?;
+        let format = request.data.format.as_deref().unwrap_or("markdown");
         
         let applicable_rules: Vec<RuleContextInfo> = composite_rules.applicable_rules
             .into_iter()
@@ -178,26 +94,25 @@ impl PatternEnforcer {
             })
             .collect();
         
-        let context = match format {
-            "json" => serde_json::to_string_pretty(&applicable_rules)
-                .map_err(|e| SynapseError::Serde(e))?,
-            "plain" => self.format_context_plain(&request.path, &applicable_rules, &composite_rules.inheritance_chain),
-            "markdown" | _ => self.format_context_markdown(&request.path, &applicable_rules, &composite_rules.inheritance_chain, &composite_rules.overridden_rules),
-        };
+        let formatter = get_formatter(format);
+        let context = formatter.format_context(
+            &request.data.path,
+            &applicable_rules,
+            &composite_rules.inheritance_chain,
+            &composite_rules.overridden_rules,
+        );
         
-        Ok(EnforceContextResponse {
-            success: true,
+        Ok(ContextResponse::success(ContextResultData {
             context: Some(context),
             applicable_rules,
             inheritance_chain: composite_rules.inheritance_chain,
             overridden_rules: composite_rules.overridden_rules,
-            error: None,
-        })
+        }))
     }
     
     /// Get rules for a specific path
     pub fn get_rules_for_path(&self, request: RulesForPathRequest) -> Result<RulesForPathResponse> {
-        let composite_rules = self.rule_graph.rules_for(&request.path)?;
+        let composite_rules = self.rule_graph.rules_for(&request.data.path)?;
         
         let rules: Vec<RuleContextInfo> = composite_rules.applicable_rules
             .into_iter()
@@ -216,139 +131,16 @@ impl PatternEnforcer {
             })
             .collect();
         
-        Ok(RulesForPathResponse {
-            success: true,
-            path: request.path,
+        Ok(RulesForPathResponse::success(RulesForPathResultData {
+            path: request.data.path,
             rules,
             inheritance_chain: composite_rules.inheritance_chain,
             overridden_rules: composite_rules.overridden_rules,
-            error: None,
-        })
+        }))
     }
     
-    // Legacy check_file_against_rules function removed - now using unified enforcement::check_rules
-    
-    /// Format context as markdown for AI consumption
-    fn format_context_markdown(
-        &self,
-        path: &PathBuf,
-        rules: &[RuleContextInfo],
-        inheritance_chain: &[PathBuf],
-        overridden_rules: &[String],
-    ) -> String {
-        let mut output = String::new();
-        
-        output.push_str("# Synapse Rule Enforcement Context\n\n");
-        output.push_str(&format!("**File:** `{}`\n\n", path.display()));
-        
-        if !inheritance_chain.is_empty() {
-            output.push_str(&format!("**Rule Inheritance:** {}\n\n", 
-                inheritance_chain
-                    .iter()
-                    .map(|p| format!("`{}`", p.display()))
-                    .collect::<Vec<_>>()
-                    .join(" → ")
-            ));
-        }
-        
-        if rules.is_empty() {
-            output.push_str("## No Rules Apply\n\nNo specific rules are configured for this file path.\n");
-            return output;
-        }
-        
-        // Group rules by enforcement level
-        let blocking_rules: Vec<_> = rules.iter().filter(|r| r.enforcement_level == "BLOCKING").collect();
-        let suggestion_rules: Vec<_> = rules.iter().filter(|r| r.enforcement_level == "SUGGESTION").collect();
-        let style_rules: Vec<_> = rules.iter().filter(|r| r.enforcement_level == "STYLE").collect();
-        
-        if !blocking_rules.is_empty() {
-            output.push_str("## 🚫 Blocking Rules (Enforced)\n\n");
-            for rule in blocking_rules {
-                output.push_str(&format!("### {} ({})\n", rule.name, rule.rule_type_display()));
-                output.push_str(&format!("**Pattern:** `{}`\n", rule.pattern));
-                output.push_str(&format!("**Message:** {}\n\n", rule.message));
-            }
-        }
-        
-        if !suggestion_rules.is_empty() {
-            output.push_str("## 💡 Standards & Suggestions\n\n");
-            for rule in suggestion_rules {
-                output.push_str(&format!("### {} ({})\n", rule.name, rule.rule_type_display()));
-                output.push_str(&format!("**Pattern:** `{}`\n", rule.pattern));
-                output.push_str(&format!("**Message:** {}\n\n", rule.message));
-            }
-        }
-        
-        if !style_rules.is_empty() {
-            output.push_str("## 🎨 Style Conventions\n\n");
-            for rule in style_rules {
-                output.push_str(&format!("### {} ({})\n", rule.name, rule.rule_type_display()));
-                output.push_str(&format!("**Pattern:** `{}`\n", rule.pattern));
-                output.push_str(&format!("**Message:** {}\n\n", rule.message));
-            }
-        }
-        
-        if !overridden_rules.is_empty() {
-            output.push_str("## ⚠️ Overridden Rules\n\n");
-            for rule_id in overridden_rules {
-                output.push_str(&format!("- `{}`\n", rule_id));
-            }
-            output.push_str("\n");
-        }
-        
-        output.push_str("---\n");
-        output.push_str("*Generated by Synapse MCP PatternEnforcer*\n");
-        
-        output
-    }
-    
-    /// Format context as plain text
-    fn format_context_plain(
-        &self,
-        path: &PathBuf,
-        rules: &[RuleContextInfo],
-        inheritance_chain: &[PathBuf],
-    ) -> String {
-        let mut output = String::new();
-        
-        output.push_str(&format!("File: {}\n", path.display()));
-        output.push_str(&format!("Rules: {}\n", rules.len()));
-        
-        if !inheritance_chain.is_empty() {
-            output.push_str(&format!("Inheritance: {}\n", 
-                inheritance_chain
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(" -> ")
-            ));
-        }
-        
-        output.push_str("\n");
-        
-        for rule in rules {
-            output.push_str(&format!("{} ({}): {} - {}\n",
-                rule.name,
-                rule.rule_type_display(),
-                rule.pattern,
-                rule.message
-            ));
-        }
-        
-        output
-    }
 }
 
-impl RuleContextInfo {
-    fn rule_type_display(&self) -> &str {
-        match self.rule_type {
-            RuleType::Forbidden => "FORBIDDEN",
-            RuleType::Required => "REQUIRED", 
-            RuleType::Standard => "STANDARD",
-            RuleType::Convention => "CONVENTION",
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -413,20 +205,21 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceCheckRequest {
+        let request = CheckRequest::new(CheckData {
             files: vec![test_file.clone()],
             dry_run: Some(false),
-        };
+        });
         
         let response = enforcer.check_files(request).unwrap();
         
         assert!(!response.success);
-        assert_eq!(response.violations.len(), 2); // forbidden println + missing docs
-        assert_eq!(response.files_checked, 1);
-        assert!(response.rules_applied > 0);
+        let data = response.data.as_ref().unwrap();
+        assert_eq!(data.violations.len(), 2); // forbidden println + missing docs
+        assert_eq!(data.files_checked, 1);
+        assert!(data.rules_applied > 0);
         
         // Check forbidden violation
-        let println_violation = response.violations.iter()
+        let println_violation = data.violations.iter()
             .find(|v| v.rule_name == "no-println")
             .expect("Should find println violation");
         assert_eq!(println_violation.rule_type, RuleType::Forbidden);
@@ -434,7 +227,7 @@ mod tests {
         assert!(println_violation.line_content.is_some());
         
         // Check required violation
-        let docs_violation = response.violations.iter()
+        let docs_violation = data.violations.iter()
             .find(|v| v.rule_name == "must-have-docs")
             .expect("Should find docs violation");
         assert_eq!(docs_violation.rule_type, RuleType::Required);
@@ -456,17 +249,18 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceCheckRequest {
+        let request = CheckRequest::new(CheckData {
             files: vec![test_file.clone()],
             dry_run: Some(false),
-        };
+        });
         
         let response = enforcer.check_files(request).unwrap();
         
         assert!(response.success);
-        assert_eq!(response.violations.len(), 0);
-        assert_eq!(response.files_checked, 1);
-        assert!(response.rules_applied > 0);
+        let data = response.data.as_ref().unwrap();
+        assert_eq!(data.violations.len(), 0);
+        assert_eq!(data.files_checked, 1);
+        assert!(data.rules_applied > 0);
     }
     
     #[test]
@@ -483,17 +277,18 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceCheckRequest {
+        let request = CheckRequest::new(CheckData {
             files: vec![test_file.clone()],
             dry_run: Some(true),
-        };
+        });
         
         let response = enforcer.check_files(request).unwrap();
         
         // Dry run should always return success
         assert!(response.success);
-        assert!(response.violations.len() > 0); // But still report violations
-        assert_eq!(response.files_checked, 1);
+        let data = response.data.as_ref().unwrap();
+        assert!(data.violations.len() > 0); // But still report violations
+        assert_eq!(data.files_checked, 1);
     }
     
     #[test]
@@ -501,18 +296,19 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceContextRequest {
+        let request = ContextRequest::new(ContextData {
             path: PathBuf::from("/test/src/main.rs"),
             format: Some("markdown".to_string()),
-        };
+        });
         
         let response = enforcer.generate_context(request).unwrap();
         
         assert!(response.success);
-        assert!(response.context.is_some());
-        assert_eq!(response.applicable_rules.len(), 3);
+        let data = response.data.as_ref().unwrap();
+        assert!(data.context.is_some());
+        assert_eq!(data.applicable_rules.len(), 3);
         
-        let context = response.context.unwrap();
+        let context = data.context.as_ref().unwrap();
         assert!(context.contains("# Synapse Rule Enforcement Context"));
         assert!(context.contains("no-println"));
         assert!(context.contains("🚫 Blocking Rules"));
@@ -524,20 +320,22 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceContextRequest {
+        let request = ContextRequest::new(ContextData {
             path: PathBuf::from("/test/src/main.rs"),
             format: Some("json".to_string()),
-        };
+        });
         
         let response = enforcer.generate_context(request).unwrap();
         
         assert!(response.success);
-        assert!(response.context.is_some());
+        let data = response.data.as_ref().unwrap();
+        assert!(data.context.is_some());
         
-        let context = response.context.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&context).unwrap();
-        assert!(parsed.is_array());
-        assert_eq!(parsed.as_array().unwrap().len(), 3);
+        let context = data.context.as_ref().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(context).unwrap();
+        assert!(parsed.is_object());
+        assert_eq!(parsed["rules"].as_array().unwrap().len(), 3);
+        assert_eq!(parsed["rule_count"], 3);
     }
     
     #[test]
@@ -545,17 +343,18 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceContextRequest {
+        let request = ContextRequest::new(ContextData {
             path: PathBuf::from("/test/src/main.rs"),
             format: Some("plain".to_string()),
-        };
+        });
         
         let response = enforcer.generate_context(request).unwrap();
         
         assert!(response.success);
-        assert!(response.context.is_some());
+        let data = response.data.as_ref().unwrap();
+        assert!(data.context.is_some());
         
-        let context = response.context.unwrap();
+        let context = data.context.as_ref().unwrap();
         assert!(context.contains("File: /test/src/main.rs"));
         assert!(context.contains("Rules: 3"));
         assert!(context.contains("no-println (FORBIDDEN)"));
@@ -566,23 +365,24 @@ mod tests {
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = RulesForPathRequest {
+        let request = RulesForPathRequest::new(RulesForPathData {
             path: PathBuf::from("/test/src/main.rs"),
-        };
+        });
         
         let response = enforcer.get_rules_for_path(request).unwrap();
         
         assert!(response.success);
-        assert_eq!(response.rules.len(), 3);
-        assert_eq!(response.path, PathBuf::from("/test/src/main.rs"));
+        let data = response.data.as_ref().unwrap();
+        assert_eq!(data.rules.len(), 3);
+        assert_eq!(data.path, PathBuf::from("/test/src/main.rs"));
         
         // Check enforcement levels
-        let blocking_rules: Vec<_> = response.rules.iter()
+        let blocking_rules: Vec<_> = data.rules.iter()
             .filter(|r| r.enforcement_level == "BLOCKING")
             .collect();
         assert_eq!(blocking_rules.len(), 2); // Forbidden + Required
         
-        let suggestion_rules: Vec<_> = response.rules.iter()
+        let suggestion_rules: Vec<_> = data.rules.iter()
             .filter(|r| r.enforcement_level == "SUGGESTION")
             .collect();
         assert_eq!(suggestion_rules.len(), 1); // Standard
@@ -622,13 +422,14 @@ REQUIRED: `#[test]` - All test functions must have test attribute.
         assert_eq!(enforcer.rule_graph().node_count(), 1);
         
         // Test that rules are loaded correctly
-        let request = RulesForPathRequest {
+        let request = RulesForPathRequest::new(RulesForPathData {
             path: temp_dir.path().join("src/main.rs"),
-        };
+        });
         
         let response = enforcer.get_rules_for_path(request).unwrap();
         assert!(response.success);
-        assert_eq!(response.rules.len(), 2);
+        let data = response.data.as_ref().unwrap();
+        assert_eq!(data.rules.len(), 2);
     }
     
     #[test]
@@ -650,17 +451,18 @@ REQUIRED: `#[test]` - All test functions must have test attribute.
         let graph = create_test_rule_graph();
         let enforcer = PatternEnforcer::new(graph);
         
-        let request = EnforceCheckRequest {
+        let request = CheckRequest::new(CheckData {
             files: vec![PathBuf::from("/nonexistent/file.rs")],
             dry_run: Some(false),
-        };
+        });
         
         let response = enforcer.check_files(request).unwrap();
         
         // Should succeed but skip nonexistent files
         assert!(response.success);
-        assert_eq!(response.violations.len(), 0);
-        assert_eq!(response.files_checked, 1);
-        assert_eq!(response.rules_applied, 0);
+        let data = response.data.as_ref().unwrap();
+        assert_eq!(data.violations.len(), 0);
+        assert_eq!(data.files_checked, 1);
+        assert_eq!(data.rules_applied, 0);
     }
 }

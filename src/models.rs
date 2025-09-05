@@ -315,9 +315,10 @@ impl CompiledRule {
     }
 
     pub fn from_rule(rule: Rule) -> Self {
-        let matcher = match Regex::new(&rule.pattern) {
+        let pattern = rule.pattern.clone(); // Clone once upfront
+        let matcher = match Regex::new(&pattern) {
             Ok(regex) => PatternMatcher::Regex(regex),
-            Err(_) => PatternMatcher::Literal(rule.pattern.clone()),
+            Err(_) => PatternMatcher::Literal(pattern), // Move instead of clone
         };
         Self::new(rule, matcher)
     }

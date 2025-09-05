@@ -116,7 +116,6 @@ fn check_required_pattern(
 mod tests {
     use super::*;
     use crate::models::{Rule, RuleType, CompiledRule};
-    use std::path::PathBuf;
 
     #[test]
     fn test_check_forbidden_pattern_with_regex() {
