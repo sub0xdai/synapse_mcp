@@ -1,0 +1,18 @@
+# Synapse MCP Configuration File
+# Copy this file to config.toml and modify as needed
+
+[neo4j]
+uri = "bolt://localhost:7687"
+user = "neo4j"
+password = "password"
+database = "neo4j"
+fetch_size = 500
+max_connections = 10
+
+[server]
+host = "localhost"
+port = 8080
+
+[runtime]
+verbose = false
+context_file = ".synapse_context"

@@ -1,0 +1,8 @@
+[neo4j]
+uri = "bolt://test-server:7687"
+user = "test-user"
+password = "test-pass"
+
+[server]
+host = "127.0.0.1"
+port = 9090

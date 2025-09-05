@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use synapse_mcp::{graph, mcp_server::{self, ServerConfigBuilder}, PatternEnforcer};
+use synapse_mcp::{graph, mcp_server::{self, ServerConfigBuilder}, PatternEnforcer, Config};
 use dotenv::dotenv;
 use anyhow::Context;
 use std::path::PathBuf;
@@ -257,12 +257,19 @@ fn build_cli() -> Command {
 }
 
 async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
-    let neo4j_uri = matches.get_one::<String>("neo4j-uri")
-        .context("neo4j-uri argument is required")?;
-    let neo4j_user = matches.get_one::<String>("neo4j-user")
-        .context("neo4j-user argument is required")?;
-    let neo4j_password = matches.get_one::<String>("neo4j-password")
-        .context("neo4j-password argument is required")?;
+    // Load configuration from files and environment
+    let mut config = Config::load().context("Failed to load configuration")?;
+    
+    // Override with CLI arguments if provided
+    if let Some(neo4j_uri) = matches.get_one::<String>("neo4j-uri") {
+        config.neo4j.uri = neo4j_uri.clone();
+    }
+    if let Some(neo4j_user) = matches.get_one::<String>("neo4j-user") {
+        config.neo4j.user = neo4j_user.clone();
+    }
+    if let Some(neo4j_password) = matches.get_one::<String>("neo4j-password") {
+        config.neo4j.password = neo4j_password.clone();
+    }
 
     // Check if we need to load RuleGraph for enforcement commands
     let rule_graph = match matches.subcommand() {
@@ -285,32 +292,35 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             cli::commands::init::handle_init(sub_matches).await?
         }
         Some(("index", sub_matches)) => {
-            cli::commands::index::handle_index(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+            cli::commands::index::handle_index(sub_matches, &config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await?
         }
         Some(("context", sub_matches)) => {
-            cli::commands::context::handle_context(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+            cli::commands::context::handle_context(sub_matches, &config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await?
         }
         Some(("query", sub_matches)) => {
-            cli::commands::query::handle_query(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+            cli::commands::query::handle_query(sub_matches, &config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await?
         }
         Some(("serve", sub_matches)) => {
-            let port = *sub_matches.get_one::<u16>("port")
-                .context("port argument is required")?;
-            let host = sub_matches.get_one::<String>("host")
-                .context("host argument is required")?;
+            // Override config with CLI arguments if provided
+            if let Some(port) = sub_matches.get_one::<u16>("port") {
+                config.server.port = *port;
+            }
+            if let Some(host) = sub_matches.get_one::<String>("host") {
+                config.server.host = host.clone();
+            }
             let enable_enforcer = sub_matches.get_flag("enable-enforcer");
             
-            println!("🚀 Starting Synapse MCP server on {}:{}", host, port);
-            println!("📊 Connecting to Neo4j at {}", neo4j_uri);
+            println!("🚀 Starting Synapse MCP server on {}:{}", config.server.host, config.server.port);
+            println!("📊 Connecting to Neo4j at {}", config.neo4j.uri);
             
             // Connect to Neo4j
-            let graph_conn = graph::connect(neo4j_uri, neo4j_user, neo4j_password).await
+            let graph_conn = graph::connect(&config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await
                 .context("Failed to connect to Neo4j")?;
             
             // Build server configuration using builder pattern
             let mut config_builder = ServerConfigBuilder::new()
-                .port(port)
-                .host(host.clone())
+                .port(config.server.port)
+                .host(config.server.host.clone())
                 .graph(graph_conn);
             
             // Add PatternEnforcer if requested
@@ -342,7 +352,7 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             cli::commands::enforce_context::handle_enforce_context(sub_matches, rule_graph.as_ref()).await?
         }
         Some(("status", sub_matches)) => {
-            cli::commands::status::handle_status(sub_matches, neo4j_uri, neo4j_user, neo4j_password).await?
+            cli::commands::status::handle_status(sub_matches, &config.neo4j.uri, &config.neo4j.user, &config.neo4j.password).await?
         }
         Some(("demo", _)) => {
             run_demo().await;

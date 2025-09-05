@@ -8,6 +8,7 @@ pub mod rule_graph;
 pub mod enforcement;
 pub mod api_models;
 pub mod formatting;
+pub mod config;
 
 
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
@@ -26,4 +27,5 @@ pub use formatting::{
     OutputFormatter, Formattable, MarkdownFormatter, JsonFormatter, PlainFormatter,
     get_formatter, FormattableContext
 };
+pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig};
 
