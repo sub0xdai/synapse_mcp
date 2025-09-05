@@ -4,6 +4,7 @@ use serde_yaml;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::{debug, trace};
 
 #[derive(serde::Deserialize, Debug)]
 struct RuleFrontmatter {
@@ -36,6 +37,38 @@ impl RuleParser {
     /// Parse rule content from string
     pub fn parse_content(&self, content: &str, file_path: PathBuf) -> crate::Result<RuleSet> {
         let (frontmatter_opt, markdown_content) = self.extract_frontmatter(content)?;
+        
+        // Check for synapse marker in frontmatter - required to process this file
+        if let Some(frontmatter_yaml) = &frontmatter_opt {
+            let frontmatter: RuleFrontmatter = serde_yaml::from_str(frontmatter_yaml)?;
+            
+            // Check if this file is marked for synapse MCP processing
+            if let Some(mcp_value) = frontmatter.metadata.get("mcp") {
+                let mcp_str = match mcp_value {
+                    serde_yaml::Value::String(s) => s.as_str(),
+                    _ => "",
+                };
+                if mcp_str != "synapse" {
+                    // Skip files not marked for synapse MCP
+                    return Err(crate::SynapseError::Parse(format!(
+                        "File {} not marked for synapse MCP processing (mcp: {})", 
+                        file_path.display(), mcp_str
+                    )));
+                }
+            } else {
+                // Skip files without mcp marker
+                return Err(crate::SynapseError::Parse(format!(
+                    "File {} missing 'mcp' field in frontmatter", 
+                    file_path.display()
+                )));
+            }
+        } else {
+            // Skip files without frontmatter
+            return Err(crate::SynapseError::Parse(format!(
+                "File {} has no YAML frontmatter", 
+                file_path.display()
+            )));
+        }
         
         let mut rule_set = RuleSet::new(file_path);
 
@@ -107,11 +140,12 @@ impl RuleParser {
     fn extract_compiled_rules(&self, content: &str) -> crate::Result<Vec<CompiledRule>> {
         let mut compiled_rules = Vec::new();
         
-        // Simple rule extraction - look for specific patterns
-        // This is a basic implementation, could be enhanced with more sophisticated parsing
+        debug!("Extracting rules from markdown content ({} chars)", content.len());
+        trace!("Content:\n{}", content);
         
         // Look for "FORBIDDEN" patterns
         if let Some(forbidden_rules) = self.extract_forbidden_rules(content) {
+            debug!("Found {} FORBIDDEN rules", forbidden_rules.len());
             for rule in forbidden_rules {
                 compiled_rules.push(CompiledRule::from_rule(rule));
             }
@@ -119,6 +153,7 @@ impl RuleParser {
 
         // Look for "REQUIRED" patterns  
         if let Some(required_rules) = self.extract_required_rules(content) {
+            debug!("Found {} REQUIRED rules", required_rules.len());
             for rule in required_rules {
                 compiled_rules.push(CompiledRule::from_rule(rule));
             }
@@ -126,11 +161,13 @@ impl RuleParser {
 
         // Look for "STANDARD" patterns
         if let Some(standard_rules) = self.extract_standard_rules(content) {
+            debug!("Found {} STANDARD rules", standard_rules.len());
             for rule in standard_rules {
                 compiled_rules.push(CompiledRule::from_rule(rule));
             }
         }
 
+        debug!("Total rules extracted: {}", compiled_rules.len());
         Ok(compiled_rules)
     }
 
@@ -143,12 +180,17 @@ impl RuleParser {
     }
 
     fn extract_forbidden_rules(&self, content: &str) -> Option<Vec<Rule>> {
-        let forbidden_regex = Regex::new(r"(?i)(?:forbidden|never|must not):\s*`([^`]+)`\s*-\s*(.+)").ok()?;
+        // More flexible regex that handles both `pattern` and pattern formats
+        let forbidden_regex = Regex::new(r"(?i)(?:forbidden|never|must\s+not):\s*`?([^`\n\-]+)`?\s*-\s*(.+)").ok()?;
         let mut rules = Vec::new();
 
+        debug!("Searching for FORBIDDEN rules with regex: {}", forbidden_regex.as_str());
+        
         for captures in forbidden_regex.captures_iter(content) {
-            let pattern = captures.get(1)?.as_str();
-            let message = captures.get(2)?.as_str();
+            let pattern = captures.get(1)?.as_str().trim();
+            let message = captures.get(2)?.as_str().trim();
+            
+            debug!("Found FORBIDDEN rule: pattern='{}', message='{}'", pattern, message);
             
             let rule = Rule::new(
                 format!("forbidden-{}", rules.len()),
@@ -159,16 +201,22 @@ impl RuleParser {
             rules.push(rule);
         }
 
+        debug!("Extracted {} FORBIDDEN rules", rules.len());
         if rules.is_empty() { None } else { Some(rules) }
     }
 
     fn extract_required_rules(&self, content: &str) -> Option<Vec<Rule>> {
-        let required_regex = Regex::new(r"(?i)(?:required|must|mandatory):\s*`([^`]+)`\s*-\s*(.+)").ok()?;
+        // More flexible regex that handles both `pattern` and pattern formats
+        let required_regex = Regex::new(r"(?i)(?:required|must|mandatory):\s*`?([^`\n\-]+)`?\s*-\s*(.+)").ok()?;
         let mut rules = Vec::new();
 
+        debug!("Searching for REQUIRED rules with regex: {}", required_regex.as_str());
+
         for captures in required_regex.captures_iter(content) {
-            let pattern = captures.get(1)?.as_str();
-            let message = captures.get(2)?.as_str();
+            let pattern = captures.get(1)?.as_str().trim();
+            let message = captures.get(2)?.as_str().trim();
+            
+            debug!("Found REQUIRED rule: pattern='{}', message='{}'", pattern, message);
             
             let rule = Rule::new(
                 format!("required-{}", rules.len()),
@@ -179,16 +227,22 @@ impl RuleParser {
             rules.push(rule);
         }
 
+        debug!("Extracted {} REQUIRED rules", rules.len());
         if rules.is_empty() { None } else { Some(rules) }
     }
 
     fn extract_standard_rules(&self, content: &str) -> Option<Vec<Rule>> {
-        let standard_regex = Regex::new(r"(?i)(?:use|prefer|should):\s*`([^`]+)`\s*-\s*(.+)").ok()?;
+        // More flexible regex that handles both `pattern` and pattern formats  
+        let standard_regex = Regex::new(r"(?i)(?:standard|use|prefer|should):\s*`?([^`\n\-]+)`?\s*-\s*(.+)").ok()?;
         let mut rules = Vec::new();
 
+        debug!("Searching for STANDARD rules with regex: {}", standard_regex.as_str());
+
         for captures in standard_regex.captures_iter(content) {
-            let pattern = captures.get(1)?.as_str();
-            let message = captures.get(2)?.as_str();
+            let pattern = captures.get(1)?.as_str().trim();
+            let message = captures.get(2)?.as_str().trim();
+            
+            debug!("Found STANDARD rule: pattern='{}', message='{}'", pattern, message);
             
             let rule = Rule::new(
                 format!("standard-{}", rules.len()),
@@ -199,6 +253,7 @@ impl RuleParser {
             rules.push(rule);
         }
 
+        debug!("Extracted {} STANDARD rules", rules.len());
         if rules.is_empty() { None } else { Some(rules) }
     }
 }

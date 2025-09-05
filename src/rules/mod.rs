@@ -30,8 +30,17 @@ impl RuleSystem {
             match self.parser.parse_rule_file(&file_path) {
                 Ok(rule_set) => rule_sets.push(rule_set),
                 Err(e) => {
-                    eprintln!("Warning: Failed to parse rule file {}: {}", file_path.display(), e);
-                    continue;
+                    // Only warn for actual parse errors, silently skip non-synapse files
+                    let error_msg = e.to_string();
+                    if error_msg.contains("not marked for synapse MCP") 
+                        || error_msg.contains("missing 'mcp' field") 
+                        || error_msg.contains("no YAML frontmatter") {
+                        // Silently skip files without synapse marker
+                        continue;
+                    } else {
+                        eprintln!("Warning: Failed to parse rule file {}: {}", file_path.display(), e);
+                        continue;
+                    }
                 }
             }
         }

@@ -9,21 +9,31 @@ impl RuleDiscovery {
         Self
     }
 
-    /// Find all .synapse.md files in a directory tree
+    /// Find all .md files that could contain synapse rules in a directory tree
     pub fn find_rule_files(&self, root_path: &Path) -> crate::Result<Vec<PathBuf>> {
         let mut rule_files = Vec::new();
 
+        // Find all .md files in the directory tree
         for entry in WalkDir::new(root_path)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.is_file() && path.file_name() == Some(".synapse.md".as_ref()) {
-                rule_files.push(path.to_path_buf());
+            if path.is_file() && path.extension() == Some("md".as_ref()) {
+                // Skip files that are clearly not rule files
+                let file_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                
+                // Skip common non-rule files
+                if !file_name.eq_ignore_ascii_case("readme.md") 
+                    && !file_name.eq_ignore_ascii_case("changelog.md")
+                    && !file_name.eq_ignore_ascii_case("license.md") {
+                    rule_files.push(path.to_path_buf());
+                }
             }
         }
 
-        // Sort for consistent ordering
         rule_files.sort();
         Ok(rule_files)
     }

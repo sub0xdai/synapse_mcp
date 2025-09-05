@@ -1,8 +1,7 @@
-version: '3.8'
 
 services:
   neo4j:
-    image: neo4j:5-community
+    image: neo4j:latest
     container_name: synapse-neo4j
     ports:
       - "7687:7687"  # Bolt protocol
@@ -10,11 +9,6 @@ services:
     environment:
       - NEO4J_AUTH=neo4j/password
       - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_dbms_connector_bolt_listen_address=0.0.0.0:7687
-      - NEO4J_dbms_connector_http_listen_address=0.0.0.0:7474
-      # Memory settings for development
-      - NEO4J_dbms_memory_heap_initial_size=512m
-      - NEO4J_dbms_memory_heap_max_size=1G
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
