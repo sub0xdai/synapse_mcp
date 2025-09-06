@@ -55,27 +55,42 @@ impl RuleSystem {
         let mut applicable_rule_sets = Vec::new();
         let mut visited_paths = std::collections::HashSet::new();
 
-        // First, collect all applicable rule sets by walking up the directory tree
-        let mut current_dir = target_path.parent();
-        
+        // Create a map from canonical DIRECTORY path to its RuleSet
+        let dir_rule_map: std::collections::HashMap<PathBuf, &RuleSet> = rule_sets
+            .iter()
+            .filter_map(|rs| {
+                rs.path.parent()
+                    .and_then(|p| p.canonicalize().ok())
+                    .map(|canon_dir| (canon_dir, rs))
+            })
+            .collect();
+
+        // Canonicalize the target path once
+        let canonical_target = match target_path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => target_path.to_path_buf(),
+        };
+
+        // Walk up the directory tree, looking up DIRECTORIES in the map
+        let mut current_dir = canonical_target.parent();
         while let Some(dir) = current_dir {
-            let potential_rule_file = dir.join(".synapse.md");
-            
-            // Find matching rule set
-            if let Some(rule_set) = rule_sets.iter().find(|rs| rs.path == potential_rule_file) {
-                if !visited_paths.contains(&rule_set.path) {
-                    inheritance_chain.push(rule_set.path.clone());
-                    applicable_rule_sets.push(rule_set);
-                    visited_paths.insert(rule_set.path.clone());
-                    
-                    // Follow explicit inheritance paths
-                    self.add_inherited_rule_sets(rule_set, rule_sets, &mut applicable_rule_sets, 
-                                                &mut inheritance_chain, &mut visited_paths);
+            if let Ok(canon_dir) = dir.canonicalize() {
+                if let Some(rule_set) = dir_rule_map.get(&canon_dir) {
+                    if visited_paths.insert(rule_set.path.clone()) {
+                        applicable_rule_sets.push(*rule_set);
+                        self.add_inherited_rule_sets(
+                            rule_set,
+                            &dir_rule_map,
+                            &mut applicable_rule_sets,
+                            &mut visited_paths,
+                        );
+                    }
                 }
             }
-
             current_dir = dir.parent();
         }
+
+        inheritance_chain.extend(visited_paths.iter().cloned());
 
         // Second, collect all overrides from all rule sets (children override parents)
         for rule_set in &applicable_rule_sets {
@@ -100,32 +115,29 @@ impl RuleSystem {
     }
 
     /// Helper method to recursively add inherited rule sets
-    fn add_inherited_rule_sets<'a>(&self, 
-                                   rule_set: &RuleSet, 
-                                   all_rule_sets: &'a [RuleSet],
+    fn add_inherited_rule_sets<'a>(&self,
+                                   rule_set: &RuleSet,
+                                   dir_rule_map: &'a std::collections::HashMap<PathBuf, &RuleSet>,
                                    applicable_rule_sets: &mut Vec<&'a RuleSet>,
-                                   inheritance_chain: &mut Vec<PathBuf>,
                                    visited_paths: &mut std::collections::HashSet<PathBuf>) {
-        
         for inherit_path in &rule_set.inherits {
-            // Resolve relative paths relative to the current rule set's directory
             let base_dir = rule_set.path.parent().unwrap_or_else(|| std::path::Path::new("."));
-            let absolute_inherit_path = base_dir.join(inherit_path).canonicalize()
-                .unwrap_or_else(|_| base_dir.join(inherit_path));
-            
-            // Find the inherited rule set
-            if let Some(inherited_rule_set) = all_rule_sets.iter()
-                .find(|rs| rs.path.canonicalize().unwrap_or_else(|_| rs.path.clone()) == absolute_inherit_path ||
-                           rs.path == absolute_inherit_path) {
-                
-                if !visited_paths.contains(&inherited_rule_set.path) {
-                    inheritance_chain.push(inherited_rule_set.path.clone());
-                    applicable_rule_sets.push(inherited_rule_set);
-                    visited_paths.insert(inherited_rule_set.path.clone());
-                    
-                    // Recursively follow inheritance chain
-                    self.add_inherited_rule_sets(inherited_rule_set, all_rule_sets, 
-                                                applicable_rule_sets, inheritance_chain, visited_paths);
+            if let Ok(absolute_inherit_path) = base_dir.join(inherit_path).canonicalize() {
+                // The inherited path could be a file or a directory. We check for both.
+                // Case 1: Path is a directory.
+                if let Some(inherited_rule_set) = dir_rule_map.get(&absolute_inherit_path) {
+                    if visited_paths.insert(inherited_rule_set.path.clone()) {
+                        applicable_rule_sets.push(*inherited_rule_set);
+                        self.add_inherited_rule_sets(inherited_rule_set, dir_rule_map, applicable_rule_sets, visited_paths);
+                    }
+                // Case 2: Path is a file, so we get its parent directory.
+                } else if let Some(parent_dir) = absolute_inherit_path.parent() {
+                    if let Some(inherited_rule_set) = dir_rule_map.get(parent_dir) {
+                        if visited_paths.insert(inherited_rule_set.path.clone()) {
+                            applicable_rule_sets.push(*inherited_rule_set);
+                            self.add_inherited_rule_sets(inherited_rule_set, dir_rule_map, applicable_rule_sets, visited_paths);
+                        }
+                    }
                 }
             }
         }

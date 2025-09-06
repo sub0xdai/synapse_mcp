@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::ArgMatches;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 
 use synapse_mcp::{RuleGraph, RuleType, Violation, check_rules};

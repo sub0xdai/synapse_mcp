@@ -171,13 +171,6 @@ impl RuleParser {
         Ok(compiled_rules)
     }
 
-    /// Extract rules from markdown content (legacy method for tests)
-    fn extract_rules(&self, content: &str) -> crate::Result<Vec<Rule>> {
-        let compiled_rules = self.extract_compiled_rules(content)?;
-        Ok(compiled_rules.into_iter()
-            .map(|cr| (*cr.rule).clone())
-            .collect())
-    }
 
     fn extract_forbidden_rules(&self, content: &str) -> Option<Vec<Rule>> {
         // More flexible regex that handles both `pattern` and pattern formats

@@ -3,7 +3,7 @@ use clap::ArgMatches;
 use serde_json;
 use std::path::PathBuf;
 
-use synapse_mcp::{RuleGraph, RuleType};
+use synapse_mcp::RuleType;
 
 /// Context information for AI assistant
 #[derive(Debug, Clone, serde::Serialize)]
