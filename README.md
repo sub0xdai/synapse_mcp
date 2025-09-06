@@ -5,7 +5,7 @@ A dynamic memory system for AI coding assistants that provides persistent projec
 
 ## Core Features
 
-* **Rule Enforcement**: Validates code against project-specific standards using `.synapse.md` files
+* **Rule Enforcement**: Validates code against project-specific standards defined in `.md` files within `.synapse/` directories
 * **AI Context Generation**: Provides structured project context to AI assistants like Claude
 * **Inheritance System**: Directory-based rule inheritance with override capabilities  
 * **MCP Server**: High-performance API server for real-time AI integration
@@ -38,15 +38,25 @@ This starts:
 
 ### 2. Create Your First Rules
 
-Copy the example rules to your project and customize them:
+Create `.synapse/` directories with rule files organized by domain:
 
 ```bash
-# Copy example rules to your project root
-cp rules_examples/.synapse.md .
-cp -r rules_examples/src .
+# Create .synapse directory structure
+mkdir -p .synapse src/.synapse tests/.synapse
 
-# Or start with specific examples
-cp rules_examples/.synapse.md my_project/.synapse.md
+# Copy example rule files
+cp .synapse/security.md my_project/.synapse/
+cp .synapse/performance.md my_project/.synapse/
+cp src/.synapse/rust-patterns.md my_project/src/.synapse/
+
+# Or create your own rule files
+echo '---
+mcp: synapse
+type: rule
+---
+FORBIDDEN: `TODO` - Convert TODOs to GitHub issues
+REQUIRED: `#[test]` - All functions need tests
+' > .synapse/coding-standards.md
 ```
 
 ### 3. Test Rule Enforcement
@@ -55,13 +65,13 @@ Check files against your rules:
 
 ```bash
 # Check specific files
-./target/release/synapse_mcp check src/main.rs lib.rs
+cargo run -- check src/main.rs src/lib.rs
 
 # Check with verbose output
-./target/release/synapse_mcp check src/* --verbose
+cargo run -- check src/* --verbose
 
 # Dry run to see what rules apply
-./target/release/synapse_mcp check src/* --dry-run
+cargo run -- check src/* --dry-run
 ```
 
 ### 4. Generate AI Context
@@ -70,11 +80,11 @@ Get structured context for AI assistants:
 
 ```bash
 # Generate context for specific file
-./target/release/synapse_mcp enforce-context src/main.rs
+cargo run -- enforce-context src/main.rs
 
 # Generate in different formats
-./target/release/synapse_mcp enforce-context src/main.rs --format json
-./target/release/synapse_mcp enforce-context src/main.rs --output .context.md
+cargo run -- enforce-context src/main.rs --format json
+cargo run -- enforce-context src/main.rs --output .context.md
 ```
 
 ### 5. Setup Git Hooks (Optional)
@@ -94,35 +104,45 @@ git commit -m "Test commit"  # Rules will be automatically checked
 
 ## Writing Rules
 
-Rules are defined in `.synapse.md` files placed throughout your project directory structure. See **[DOCS_RULES.md](DOCS_RULES.md)** for complete documentation on writing rules.
+Rules are defined in any `.md` file placed within a `.synapse/` directory. This allows you to organize rules by domain, such as `security.md`, `performance.md`, etc.
 
 ### Quick Reference
+
+The format for a rule file is YAML frontmatter followed by the rule definitions:
 
 ```yaml
 ---
 mcp: synapse          # Required - marks file for Synapse MCP
 type: rule            # Optional - node type
-inherits: ["../.synapse.md"]  # Optional - inherit from parent
+inherits: ["../.synapse/security.md"]  # Optional - inherit from other files
 overrides: ["forbidden-0"]    # Optional - override specific rules
 ---
 
 # Rule Examples
 
-FORBIDDEN: `TODO` - Convert TODOs to proper issue tracking
-REQUIRED: `#[test]` - All functions must have tests  
-STANDARD: `unwrap()` - Prefer proper error handling
-CONVENTION: `snake_case` - Use snake_case for variables
+FORBIDDEN: `TODO` - Convert TODOs to proper issue tracking.
+REQUIRED: `#[test]` - All functions must have tests.
+STANDARD: `unwrap()` - Prefer proper error handling.
+CONVENTION: `snake_case` - Use snake_case for variables.
 ```
 
 ### Rule Inheritance
 
+Rules are inherited from parent directories. A `.synapse/` directory in a subdirectory will add to or override the rules from its parent's `.synapse/` directory.
+
 ```
 project/
-├── .synapse.md           # Root rules (global)
+├── .synapse/             # Root rules applied globally
+│   ├── security.md
+│   └── performance.md
 ├── src/
-│   ├── .synapse.md       # Inherits root + src-specific rules
+│   ├── .synapse/         # Rules here apply only to `src/` and below
+│   │   └── rust.md
 │   └── api/
-│       └── .synapse.md   # Inherits root + src + api-specific rules
+│       └── main.rs       # Rules from `src/` and `project/` apply here
+└── tests/
+    └── .synapse/         # Rules here apply only to `tests/`
+        └── testing.md
 ```
 
 -----

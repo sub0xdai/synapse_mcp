@@ -22,9 +22,9 @@ Synapse MCP operates with a dual-hook architecture for intelligent rule enforcem
 
 ### RuleGraph Engine
 ```rust
-.synapse.md files → RuleDiscovery → RuleParser → RuleGraph
+.synapse/*.md files → RuleDiscovery → RuleParser → RuleSystem
                                                       ↓
-File Path Query → Inheritance Resolution → CompositeRules → PatternEnforcer
+File Path Query → Directory Mapping → rules_for_path → CompositeRules → PatternEnforcer
 ```
 
 ### Key Components
@@ -45,11 +45,12 @@ File Path Query → Inheritance Resolution → CompositeRules → PatternEnforce
   - Integration with MCP server endpoints
 
 #### Rule Discovery (`src/rules/discovery.rs`)
-- **Purpose:** Recursive discovery of `.synapse.md` files
+- **Purpose:** Recursive discovery of `.md` files in `.synapse/` directories
 - **Features:**
-  - Efficient directory traversal
-  - Markdown file filtering
-  - YAML frontmatter validation
+  - Efficient directory traversal scanning for `.synapse/` directories
+  - Discovers ALL `.md` files within `.synapse/` directories  
+  - Supports multiple rule files per directory (security.md, performance.md, etc.)
+  - YAML frontmatter validation with `mcp: synapse` marker
 
 ## 4. Data Flow Architecture
 
@@ -87,22 +88,40 @@ Markdown files → Indexer → Neo4j DB → MCP Server → Natural Language Quer
 
 ## 6. Rule File Format
 
-### .synapse.md Structure
+### .synapse/*.md Structure
+Rules are now organized in `.synapse/` directories, with any `.md` filename:
+
 ```yaml
 ---
 mcp: synapse                    # Required marker
 type: rule                      # Optional node type
-inherits: ["../parent/.synapse.md"]  # Optional inheritance
+title: "Security Rules"         # Optional display name
+inherits: ["../parent/.synapse/security.md"]  # Optional inheritance
 overrides: ["old-rule-id"]      # Optional rule overrides
-tags: ["performance", "api"]    # Optional categorization
+tags: ["security", "compliance"]    # Optional categorization
 ---
 
-# Rule Content
+# Rule Content (Examples by Domain)
 
-FORBIDDEN: `println!` - Use logging framework instead.
-REQUIRED: `#[test]` - All functions must have tests.
-STANDARD: `unwrap` - Consider proper error handling.
-CONVENTION: `snake_case` - Use snake_case for variables.
+FORBIDDEN: `password` - Never hardcode passwords in source code.
+REQUIRED: `validate_input` - All user inputs must be validated.
+STANDARD: `https://` - Use HTTPS for external communications.
+CONVENTION: `auth_` - Authentication functions should be prefixed with auth_.
+```
+
+### Flexible Organization
+```
+project/
+├── .synapse/
+│   ├── security.md      # Security rules
+│   ├── performance.md   # Performance rules  
+│   └── coding.md        # General coding standards
+├── src/
+│   └── .synapse/
+│       └── rust.md      # Rust-specific patterns
+└── tests/
+    └── .synapse/
+        └── testing.md   # Test-specific rules
 ```
 
 ### Rule Types & Enforcement
