@@ -9,28 +9,28 @@ impl RuleDiscovery {
         Self
     }
 
-    /// Find all .md files that could contain synapse rules in a directory tree
+    /// Find all .md files inside .synapse/ directories in a directory tree
     pub fn find_rule_files(&self, root_path: &Path) -> crate::Result<Vec<PathBuf>> {
         let mut rule_files = Vec::new();
 
-        // Find all .md files in the directory tree
+        // Find all .synapse directories and their .md files
         for entry in WalkDir::new(root_path)
             .into_iter()
+            .filter_entry(|e| {
+                // Skip .git and other common ignore directories
+                e.file_name() != ".git" && 
+                e.file_name() != "target" && 
+                e.file_name() != "node_modules"
+            })
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.is_file() && path.extension() == Some("md".as_ref()) {
-                // Skip files that are clearly not rule files
-                let file_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
-                
-                // Skip common non-rule files
-                if !file_name.eq_ignore_ascii_case("readme.md") 
-                    && !file_name.eq_ignore_ascii_case("changelog.md")
-                    && !file_name.eq_ignore_ascii_case("license.md") {
-                    rule_files.push(path.to_path_buf());
-                }
+            
+            // Check if this is a .md file inside a .synapse directory
+            if path.is_file() && 
+               path.extension() == Some("md".as_ref()) &&
+               path.components().any(|c| c.as_os_str() == ".synapse") {
+                rule_files.push(path.to_path_buf());
             }
         }
 
@@ -38,13 +38,15 @@ impl RuleDiscovery {
         Ok(rule_files)
     }
 
-    /// Check if a file is a .synapse.md rule file
+    /// Check if a file is inside a .synapse directory and is a .md file
     pub fn is_rule_file(&self, path: &Path) -> bool {
-        path.is_file() && path.file_name() == Some(".synapse.md".as_ref())
+        path.is_file() && 
+        path.extension() == Some("md".as_ref()) &&
+        path.components().any(|c| c.as_os_str() == ".synapse")
     }
 
-    /// Find the nearest parent .synapse.md file for a given path
-    pub fn find_parent_rule_file(&self, target_path: &Path) -> Option<PathBuf> {
+    /// Find the nearest parent .synapse directory and return all .md files in it
+    pub fn find_parent_rule_files(&self, target_path: &Path) -> Vec<PathBuf> {
         let mut current_dir = if target_path.is_dir() {
             Some(target_path)
         } else {
@@ -52,17 +54,27 @@ impl RuleDiscovery {
         };
 
         while let Some(dir) = current_dir {
-            let potential_rule_file = dir.join(".synapse.md");
-            if potential_rule_file.exists() {
-                return Some(potential_rule_file);
+            let synapse_dir = dir.join(".synapse");
+            if synapse_dir.exists() && synapse_dir.is_dir() {
+                let mut rule_files = Vec::new();
+                if let Ok(entries) = std::fs::read_dir(synapse_dir) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.is_file() && path.extension() == Some("md".as_ref()) {
+                            rule_files.push(path);
+                        }
+                    }
+                }
+                rule_files.sort();
+                return rule_files;
             }
             current_dir = dir.parent();
         }
 
-        None
+        Vec::new()
     }
 
-    /// Find all parent .synapse.md files walking up the directory tree
+    /// Find all parent .synapse directories and their .md files walking up the directory tree
     pub fn find_inheritance_chain(&self, target_path: &Path) -> Vec<PathBuf> {
         let mut chain = Vec::new();
         let mut current_dir = if target_path.is_dir() {
@@ -72,9 +84,19 @@ impl RuleDiscovery {
         };
 
         while let Some(dir) = current_dir {
-            let potential_rule_file = dir.join(".synapse.md");
-            if potential_rule_file.exists() {
-                chain.push(potential_rule_file);
+            let synapse_dir = dir.join(".synapse");
+            if synapse_dir.exists() && synapse_dir.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(synapse_dir) {
+                    let mut dir_rule_files = Vec::new();
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.is_file() && path.extension() == Some("md".as_ref()) {
+                            dir_rule_files.push(path);
+                        }
+                    }
+                    dir_rule_files.sort();
+                    chain.extend(dir_rule_files);
+                }
             }
             current_dir = dir.parent();
         }
