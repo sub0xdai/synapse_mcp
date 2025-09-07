@@ -8,8 +8,8 @@ set -e
 
 # Configuration
 SYNAPSE_MCP_URL="${SYNAPSE_MCP_URL:-http://localhost:8080}"
-TEMP_FILE="/tmp/synapse_content_$$"
-RESPONSE_FILE="/tmp/synapse_response_$$"
+TEMP_FILE=$(mktemp /tmp/synapse_content.XXXXXX)
+RESPONSE_FILE=$(mktemp /tmp/synapse_response.XXXXXX)
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,7 +38,7 @@ log_error() {
 cleanup() {
     rm -f "$TEMP_FILE" "$RESPONSE_FILE"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM ERR
 
 # Parse arguments
 if [ $# -lt 2 ]; then
@@ -59,20 +59,14 @@ fi
 
 log_info "Validating content for: $FILE_PATH"
 
-# Create request payload
-cat > "$TEMP_FILE" << EOF
-{
-    "data": {
-        "file_path": "$FILE_PATH",
-        "content": $(echo "$CONTENT" | jq -R -s .)
-    }
-}
-EOF
-
-# Send request to pre-write endpoint
-if curl -s --connect-timeout 5 --max-time 10 -X POST "$SYNAPSE_MCP_URL/enforce/pre-write" \
+# Send request to pre-write endpoint with secure JSON construction
+if jq -n \
+    --arg path "$FILE_PATH" \
+    --arg content "$CONTENT" \
+    '{"data": {"file_path": $path, "content": $content}}' | \
+  curl -s --connect-timeout 5 --max-time 10 -X POST "$SYNAPSE_MCP_URL/enforce/pre-write" \
     -H "Content-Type: application/json" \
-    -d @"$TEMP_FILE" \
+    --data-binary @- \
     -o "$RESPONSE_FILE" 2>/dev/null; then
     
     # Parse response
