@@ -1,9 +1,11 @@
-use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse, PreWriteResultData, RuleViolationDto, RuleContextInfo, CheckResultData, ContextResultData, RulesForPathResultData, AutoFix, get_formatter, Violation};
+use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse, PreWriteResultData, RuleViolationDto, RuleContextInfo, CheckResultData, ContextResultData, RulesForPathResultData, AutoFix, get_formatter, Violation, RuleCache, CacheStats, CacheConfig};
 
 #[cfg(feature = "ast-fixes")]
 use crate::safely_replace_unwrap;
 
 use std::path::PathBuf;
+use std::time::Duration;
+use tracing::{debug, info};
 
 /// Generate AST-based auto-fixes when feature is enabled
 #[cfg(feature = "ast-fixes")]
@@ -127,6 +129,7 @@ fn apply_auto_fixes(content: &str, fixes: &[AutoFix]) -> Option<String> {
 #[derive(Debug)]
 pub struct PatternEnforcer {
     rule_graph: RuleGraph,
+    cache: Option<RuleCache>,
 }
 
 
@@ -134,17 +137,104 @@ impl PatternEnforcer {
     /// Create a new PatternEnforcer from a project directory
     pub fn from_project(project_root: &PathBuf) -> Result<Self> {
         let rule_graph = RuleGraph::from_project(project_root)?;
-        Ok(Self { rule_graph })
+        Ok(Self { 
+            rule_graph,
+            cache: None,
+        })
     }
     
-    /// Create a PatternEnforcer with a pre-built RuleGraph
+    /// Create a new PatternEnforcer with caching enabled
+    pub fn from_project_with_cache(
+        project_root: &PathBuf,
+        cache_ttl: Duration,
+        max_entries: u64,
+    ) -> Result<Self> {
+        let rule_graph = RuleGraph::from_project(project_root)?;
+        let cache = RuleCache::new(cache_ttl, max_entries, true);
+        info!("Created PatternEnforcer with cache: TTL={}s, max_entries={}", 
+              cache_ttl.as_secs(), max_entries);
+        Ok(Self {
+            rule_graph,
+            cache: Some(cache),
+        })
+    }
+    
+    /// Create a PatternEnforcer from configuration
+    pub fn from_project_with_config(project_root: &PathBuf, cache_config: &CacheConfig) -> Result<Self> {
+        let rule_graph = RuleGraph::from_project(project_root)?;
+        
+        if cache_config.enabled {
+            let cache_ttl = Duration::from_secs(cache_config.ttl_seconds);
+            let cache = RuleCache::new(cache_ttl, cache_config.max_entries, cache_config.metrics_enabled);
+            info!("Created PatternEnforcer with cache from config: enabled={}, TTL={}s, max_entries={}, metrics={}", 
+                  cache_config.enabled, cache_config.ttl_seconds, cache_config.max_entries, cache_config.metrics_enabled);
+            Ok(Self {
+                rule_graph,
+                cache: Some(cache),
+            })
+        } else {
+            info!("Created PatternEnforcer without cache (disabled in config)");
+            Ok(Self {
+                rule_graph,
+                cache: None,
+            })
+        }
+    }
+    
+    /// Create a PatternEnforcer with a pre-built RuleGraph (no cache)
     pub fn new(rule_graph: RuleGraph) -> Self {
-        Self { rule_graph }
+        Self { 
+            rule_graph,
+            cache: None,
+        }
+    }
+    
+    /// Create a PatternEnforcer with a pre-built RuleGraph and cache
+    pub fn new_with_cache(rule_graph: RuleGraph, cache: RuleCache) -> Self {
+        Self {
+            rule_graph,
+            cache: Some(cache),
+        }
     }
     
     /// Get the underlying RuleGraph
     pub fn rule_graph(&self) -> &RuleGraph {
         &self.rule_graph
+    }
+    
+    /// Get cached rules for a path (async version for cache integration)
+    pub async fn get_rules_for_path_cached(&self, path: &PathBuf) -> Result<crate::CompositeRules> {
+        if let Some(ref cache) = self.cache {
+            // Try cache first
+            if let Some(cached_rules) = cache.get(path).await {
+                debug!("Using cached rules for path: {}", path.display());
+                return Ok(cached_rules);
+            }
+            
+            // Cache miss - resolve rules and cache them
+            debug!("Cache miss, resolving rules for path: {}", path.display());
+            let rules = self.rule_graph.rules_for(path)?;
+            cache.insert(path, rules.clone()).await;
+            Ok(rules)
+        } else {
+            // No cache - direct resolution
+            debug!("No cache configured, resolving rules directly for path: {}", path.display());
+            self.rule_graph.rules_for(path)
+        }
+    }
+    
+    /// Get cache statistics if caching is enabled (async version)
+    pub async fn cache_stats(&self) -> Option<CacheStats> {
+        if let Some(ref cache) = self.cache {
+            Some(cache.stats().await)
+        } else {
+            None
+        }
+    }
+    
+    /// Check if caching is enabled
+    pub fn has_cache(&self) -> bool {
+        self.cache.is_some()
     }
     
     /// Check files against rules (implements Write Hook functionality)
@@ -158,8 +248,14 @@ impl PatternEnforcer {
                 continue;
             }
             
-            // Get applicable rules for this file
-            let composite_rules = self.rule_graph.rules_for(file_path)?;
+            // Get applicable rules for this file (with optional caching)
+            let composite_rules = if let Some(ref _cache) = self.cache {
+                // For sync methods, we fall back to direct resolution for now
+                // Async cache methods are available via get_rules_for_path_cached()
+                self.rule_graph.rules_for(file_path)?
+            } else {
+                self.rule_graph.rules_for(file_path)?
+            };
             total_rules_applied += composite_rules.applicable_rules.len();
             
             // Read file content

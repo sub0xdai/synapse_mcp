@@ -11,13 +11,16 @@ pub mod formatting;
 pub mod config;
 pub mod auth;
 pub mod ast_analysis;
+pub mod cache;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
 
 
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
 pub use error::{SynapseError, Result};
+pub use cache::{CacheStats, RuleCache, CacheKey};
+pub use config::CacheConfig;
 pub use rule_graph::{RuleGraph, RuleGraphStats};
 pub use indexer::parse_markdown_file;
 pub use rules::{RuleSystem};

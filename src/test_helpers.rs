@@ -19,7 +19,7 @@
 //! }
 //! ```
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use tempfile::TempDir;
     use std::path::{Path, PathBuf};

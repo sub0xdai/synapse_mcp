@@ -10,6 +10,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub runtime: RuntimeConfig,
     pub logging: LoggingConfig,
+    pub cache: CacheConfig,
 }
 
 /// Neo4j database configuration
@@ -47,6 +48,19 @@ pub struct LoggingConfig {
     pub target: String,
 }
 
+/// Cache configuration for rule resolution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    /// Enable or disable rule caching
+    pub enabled: bool,
+    /// Time-to-live for cached rules in seconds
+    pub ttl_seconds: u64,
+    /// Maximum number of entries in cache
+    pub max_entries: u64,
+    /// Enable cache metrics collection
+    pub metrics_enabled: bool,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -54,6 +68,7 @@ impl Default for Config {
             server: ServerConfig::default(),
             runtime: RuntimeConfig::default(),
             logging: LoggingConfig::default(),
+            cache: CacheConfig::default(),
         }
     }
 }
@@ -96,6 +111,17 @@ impl Default for LoggingConfig {
             level: "info".to_string(),
             format: "pretty".to_string(), // pretty, json, compact
             target: "stdout".to_string(), // stdout, stderr
+        }
+    }
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ttl_seconds: 300, // 5 minutes
+            max_entries: 10000,
+            metrics_enabled: true,
         }
     }
 }
@@ -185,6 +211,12 @@ impl Config {
                 format: "pretty".to_string(),
                 target: "stdout".to_string(),
             },
+            cache: CacheConfig {
+                enabled: false, // Disable cache for testing by default
+                ttl_seconds: 60,
+                max_entries: 100,
+                metrics_enabled: false,
+            },
         }
     }
 
@@ -195,6 +227,7 @@ impl Config {
         self.neo4j = other.neo4j;
         self.server = other.server;
         self.runtime = other.runtime;
+        self.cache = other.cache;
     }
 
     /// Merge environment variables for backward compatibility
