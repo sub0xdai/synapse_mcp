@@ -127,6 +127,34 @@ pub type ContextResponse = ApiResponse<ContextResultData>;
 pub type RulesForPathRequest = ApiRequest<RulesForPathData>;
 pub type RulesForPathResponse = ApiResponse<RulesForPathResultData>;
 
+/// Data payload for pre-write validation
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PreWriteData {
+    pub file_path: PathBuf,
+    pub content: String,
+}
+
+/// Auto-fix suggestion for violations
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AutoFix {
+    pub original_pattern: String,
+    pub suggested_replacement: String,
+    pub description: String,
+    pub confidence: f32, // 0.0 to 1.0
+}
+
+/// Data payload returned from pre-write validation
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PreWriteResultData {
+    pub valid: bool,
+    pub violations: Vec<RuleViolationDto>,
+    pub auto_fixes: Option<Vec<AutoFix>>,
+    pub fixed_content: Option<String>,
+}
+
+pub type PreWriteRequest = ApiRequest<PreWriteData>;
+pub type PreWriteResponse = ApiResponse<PreWriteResultData>;
+
 impl<T> ApiRequest<T> {
     /// Create a simple request with just data
     pub fn new(data: T) -> Self {

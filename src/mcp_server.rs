@@ -5,7 +5,7 @@ pub use pattern_enforcer::{
     PatternEnforcer,
 };
 
-use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse};
+use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse};
 use axum::{
     extract::{State, Path},
     response::Json,
@@ -170,6 +170,7 @@ pub async fn create_server_with_enforcer(
         router = router
             .route("/enforce/check", post(handle_enforce_check))
             .route("/enforce/context", post(handle_enforce_context))
+            .route("/enforce/pre-write", post(handle_enforce_pre_write))
             .route("/rules/for-path", post(handle_rules_for_path));
     }
     
@@ -391,6 +392,21 @@ async fn handle_enforce_context(
             }
         }
         None => Json(ContextResponse::error("PatternEnforcer not available".to_string())),
+    }
+}
+
+async fn handle_enforce_pre_write(
+    State(state): State<ServerState>,
+    Json(request): Json<PreWriteRequest>,
+) -> Json<PreWriteResponse> {
+    match &state.enforcer {
+        Some(enforcer) => {
+            match enforcer.validate_pre_write(request) {
+                Ok(response) => Json(response),
+                Err(e) => Json(PreWriteResponse::error(e.to_string())),
+            }
+        }
+        None => Json(PreWriteResponse::error("PatternEnforcer not available".to_string())),
     }
 }
 

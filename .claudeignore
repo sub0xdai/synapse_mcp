@@ -1,0 +1,47 @@
+# Build artifacts and dependencies
+target/
+Cargo.lock
+*.lock
+pkg/
+dist/
+build/
+
+# Test fixtures and generated data
+test_docs/
+benches/
+**/fixtures/
+**/test-data/
+
+# Logs and temporary files
+*.log
+*.swp
+*.swo
+tmp/
+temp/
+logs/
+
+# Environment and config
+.env
+.env.*
+
+# Git internals and hooks
+.git/objects/
+.git/hooks/*.sample
+.git/logs/
+
+# IDE and system files
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
+
+# Generated context and cache
+.synapse_context
+.claude/context-backup/
+
+# Large or binary files
+*.wasm
+*.map
+*.db
+*.sqlite
+data/large-dataset.json

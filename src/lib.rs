@@ -20,8 +20,10 @@ pub use mcp_server::{PatternEnforcer};
 pub use enforcement::check_rules;
 pub use api_models::{
     ApiRequest, ApiResponse, CheckRequest, CheckResponse, ContextRequest, ContextResponse,
-    RulesForPathRequest, RulesForPathResponse, RuleViolationDto, RuleContextInfo,
-    CheckData, CheckResultData, ContextData, ContextResultData, RulesForPathData, RulesForPathResultData
+    RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse, 
+    RuleViolationDto, RuleContextInfo, AutoFix,
+    CheckData, CheckResultData, ContextData, ContextResultData, RulesForPathData, RulesForPathResultData, 
+    PreWriteData, PreWriteResultData
 };
 pub use formatting::{
     OutputFormatter, Formattable, MarkdownFormatter, JsonFormatter, PlainFormatter,

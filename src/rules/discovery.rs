@@ -210,9 +210,9 @@ mod tests {
         
         let root_rule_file = create_rule_file(temp_dir.path(), "# Root Rules");
         
-        let result = discovery.find_parent_rule_file(&file_path);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), root_rule_file);
+        let result = discovery.find_parent_rule_files(&file_path);
+        assert!(!result.is_empty());
+        assert_eq!(result[0], root_rule_file);
     }
 
     #[test]
@@ -223,8 +223,8 @@ mod tests {
         let file_path = temp_dir.path().join("main.rs");
         fs::write(&file_path, "// main.rs").unwrap();
         
-        let result = discovery.find_parent_rule_file(&file_path);
-        assert!(result.is_none());
+        let result = discovery.find_parent_rule_files(&file_path);
+        assert!(result.is_empty());
     }
 
     #[test]

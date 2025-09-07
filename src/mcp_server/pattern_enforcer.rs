@@ -1,5 +1,70 @@
-use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, RuleViolationDto, RuleContextInfo, CheckResultData, ContextResultData, RulesForPathResultData, get_formatter};
+use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse, PreWriteResultData, RuleViolationDto, RuleContextInfo, CheckResultData, ContextResultData, RulesForPathResultData, AutoFix, get_formatter, Violation};
 use std::path::PathBuf;
+
+/// Generate auto-fix suggestions for violations
+fn generate_auto_fixes(violations: &[Violation]) -> Vec<AutoFix> {
+    let mut fixes = Vec::new();
+    
+    for violation in violations {
+        let pattern = &violation.rule.pattern;
+        let confidence = 0.8; // Default confidence
+        
+        // Pattern-specific auto-fixes (KISS principle)
+        let auto_fix = match pattern.as_str() {
+            "TODO" => AutoFix {
+                original_pattern: "TODO".to_string(),
+                suggested_replacement: "// Issue #XXX:".to_string(),
+                description: "Convert TODO to GitHub issue reference".to_string(),
+                confidence,
+            },
+            "console.log" => AutoFix {
+                original_pattern: "console.log".to_string(),
+                suggested_replacement: "log::info!".to_string(),
+                description: "Replace console.log with proper logging".to_string(),
+                confidence,
+            },
+            "unwrap()" => AutoFix {
+                original_pattern: ".unwrap()".to_string(),
+                suggested_replacement: "?".to_string(),
+                description: "Replace unwrap() with ? operator for better error handling".to_string(),
+                confidence: 0.7, // Lower confidence as this might need more context
+            },
+            "panic!" => AutoFix {
+                original_pattern: "panic!".to_string(),
+                suggested_replacement: "return Err".to_string(),
+                description: "Replace panic! with proper error return".to_string(),
+                confidence: 0.6, // Even lower as this requires significant context
+            },
+            _ => continue, // Skip patterns we don't have fixes for
+        };
+        
+        fixes.push(auto_fix);
+    }
+    
+    fixes
+}
+
+/// Apply auto-fixes to content where confidence is high enough
+fn apply_auto_fixes(content: &str, fixes: &[AutoFix]) -> Option<String> {
+    let mut fixed_content = content.to_string();
+    let mut applied_any = false;
+    
+    for fix in fixes {
+        // Only apply fixes with high confidence (>= 0.8)
+        if fix.confidence >= 0.8 {
+            if fixed_content.contains(&fix.original_pattern) {
+                fixed_content = fixed_content.replace(&fix.original_pattern, &fix.suggested_replacement);
+                applied_any = true;
+            }
+        }
+    }
+    
+    if applied_any {
+        Some(fixed_content)
+    } else {
+        None
+    }
+}
 
 /// PatternEnforcer integrates RuleGraph with MCP server for real-time rule enforcement
 #[derive(Debug)]
@@ -140,13 +205,55 @@ impl PatternEnforcer {
         }))
     }
     
+    /// Validate content before writing (implements Pre-Write Hook functionality)
+    pub fn validate_pre_write(&self, request: PreWriteRequest) -> Result<PreWriteResponse> {
+        let file_path = &request.data.file_path;
+        let content = &request.data.content;
+        
+        // Get applicable rules for this file path
+        let composite_rules = self.rule_graph.rules_for(file_path)?;
+        
+        // Convert rules to CompiledRule format for enforcement
+        let compiled_rules: Vec<CompiledRule> = composite_rules.applicable_rules
+            .iter()
+            .map(|rule| CompiledRule::from_rule(rule.clone()))
+            .collect();
+        
+        // Check content against rules
+        let violations = check_rules(file_path, content, &compiled_rules)?;
+        
+        // Generate auto-fix suggestions for violations
+        let auto_fixes = if !violations.is_empty() {
+            Some(generate_auto_fixes(&violations))
+        } else {
+            None
+        };
+        
+        // Apply auto-fixes if possible
+        let fixed_content = if let Some(ref fixes) = auto_fixes {
+            apply_auto_fixes(content, fixes)
+        } else {
+            None
+        };
+        
+        let is_valid = violations.is_empty();
+        let violation_dtos = violations.iter().map(RuleViolationDto::from).collect();
+        
+        Ok(PreWriteResponse::success(PreWriteResultData {
+            valid: is_valid,
+            violations: violation_dtos,
+            auto_fixes,
+            fixed_content,
+        }))
+    }
+    
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Rule, RuleSet};
+    use crate::{Rule, RuleSet, CheckData, ContextData, RulesForPathData};
     use tempfile::TempDir;
     use std::fs;
 
