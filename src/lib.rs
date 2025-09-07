@@ -10,6 +10,7 @@ pub mod api_models;
 pub mod formatting;
 pub mod config;
 pub mod auth;
+pub mod ast_analysis;
 
 
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
@@ -32,4 +33,8 @@ pub use formatting::{
 };
 pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig, LoggingConfig};
 pub use auth::{AuthMiddleware, extract_bearer_token};
+pub use ast_analysis::{AstAnalysisError, AstResult, ast_fixes_available};
+
+#[cfg(feature = "ast-fixes")]
+pub use ast_analysis::{UnwrapReplacer, Replacement, safely_replace_unwrap};
 

@@ -1,8 +1,57 @@
 use crate::{RuleGraph, RuleType, Result, SynapseError, CompiledRule, check_rules, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse, PreWriteResultData, RuleViolationDto, RuleContextInfo, CheckResultData, ContextResultData, RulesForPathResultData, AutoFix, get_formatter, Violation};
+
+#[cfg(feature = "ast-fixes")]
+use crate::safely_replace_unwrap;
+
 use std::path::PathBuf;
 
-/// Generate auto-fix suggestions for violations
-fn generate_auto_fixes(violations: &[Violation]) -> Vec<AutoFix> {
+/// Generate AST-based auto-fixes when feature is enabled
+#[cfg(feature = "ast-fixes")]
+fn generate_ast_based_fixes(content: &str, violations: &[Violation]) -> Vec<AutoFix> {
+    let mut fixes = Vec::new();
+    
+    for violation in violations {
+        match violation.rule.pattern.as_str() {
+            "unwrap()" => {
+                // Use AST analysis for safe unwrap replacement
+                match safely_replace_unwrap(content) {
+                    Ok(fixed_content) if fixed_content != content => {
+                        fixes.push(AutoFix {
+                            original_pattern: ".unwrap()".to_string(),
+                            suggested_replacement: "?".to_string(),
+                            description: "Safe AST-based replacement of unwrap() with ? operator".to_string(),
+                            confidence: 0.9, // High confidence from AST analysis
+                        });
+                    }
+                    Ok(_) => {
+                        // No safe replacement found, don't suggest fix
+                    }
+                    Err(_) => {
+                        // AST analysis failed, don't suggest fix
+                    }
+                }
+            }
+            // panic! is never auto-fixed - requires human judgment
+            "panic!" => {
+                // Intentionally skip - no auto-fix for panic!
+            }
+            _ => {
+                // Not handled by AST analysis
+            }
+        }
+    }
+    
+    fixes
+}
+
+/// Stub for when AST fixes are not available
+#[cfg(not(feature = "ast-fixes"))]
+fn generate_ast_based_fixes(_content: &str, _violations: &[Violation]) -> Vec<AutoFix> {
+    Vec::new() // No AST fixes available
+}
+
+/// Generate auto-fix suggestions for violations (legacy function for simple fixes)
+fn generate_simple_auto_fixes(violations: &[Violation]) -> Vec<AutoFix> {
     let mut fixes = Vec::new();
     
     for violation in violations {
@@ -23,18 +72,11 @@ fn generate_auto_fixes(violations: &[Violation]) -> Vec<AutoFix> {
                 description: "Replace console.log with proper logging".to_string(),
                 confidence,
             },
-            "unwrap()" => AutoFix {
-                original_pattern: ".unwrap()".to_string(),
-                suggested_replacement: "?".to_string(),
-                description: "Replace unwrap() with ? operator for better error handling".to_string(),
-                confidence: 0.7, // Lower confidence as this might need more context
-            },
-            "panic!" => AutoFix {
-                original_pattern: "panic!".to_string(),
-                suggested_replacement: "return Err".to_string(),
-                description: "Replace panic! with proper error return".to_string(),
-                confidence: 0.6, // Even lower as this requires significant context
-            },
+            // DANGEROUS AUTO-FIXES REMOVED FOR SAFETY
+            // unwrap() and panic! require AST analysis to fix safely
+            // These will be handled by the AST-based system when enabled
+            "unwrap()" => continue, // Skip - requires context analysis
+            "panic!" => continue,   // Skip - requires human judgment
             _ => continue, // Skip patterns we don't have fixes for
         };
         
@@ -42,6 +84,21 @@ fn generate_auto_fixes(violations: &[Violation]) -> Vec<AutoFix> {
     }
     
     fixes
+}
+
+/// Generate comprehensive auto-fix suggestions combining simple and AST-based fixes
+fn generate_auto_fixes(content: &str, violations: &[Violation]) -> Vec<AutoFix> {
+    let mut all_fixes = Vec::new();
+    
+    // Get simple fixes (TODO, console.log, etc.)
+    let mut simple_fixes = generate_simple_auto_fixes(violations);
+    all_fixes.append(&mut simple_fixes);
+    
+    // Get AST-based fixes if available (unwrap, etc.)
+    let mut ast_fixes = generate_ast_based_fixes(content, violations);
+    all_fixes.append(&mut ast_fixes);
+    
+    all_fixes
 }
 
 /// Apply auto-fixes to content where confidence is high enough
@@ -224,7 +281,7 @@ impl PatternEnforcer {
         
         // Generate auto-fix suggestions for violations
         let auto_fixes = if !violations.is_empty() {
-            Some(generate_auto_fixes(&violations))
+            Some(generate_auto_fixes(content, &violations))
         } else {
             None
         };
