@@ -114,154 +114,139 @@ impl Default for RuleDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use std::fs;
-
-    fn create_rule_file(dir: &Path, content: &str) -> PathBuf {
-        let rule_file = dir.join(".synapse.md");
-        fs::write(&rule_file, content).unwrap();
-        rule_file
-    }
+    #[cfg(test)]
+    use crate::test_helpers::test_helpers::{TestProject, create_rule_content};
 
     #[test]
     fn test_find_rule_files_empty_directory() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        let result = discovery.find_rule_files(temp_dir.path()).unwrap();
+        let result = discovery.find_rule_files(project.root()).unwrap();
         assert_eq!(result.len(), 0);
     }
 
     #[test]
     fn test_find_rule_files_single_file() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        let _rule_file = create_rule_file(temp_dir.path(), "# Test Rule");
+        project.add_rule_file(".synapse/rules.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
         
-        let result = discovery.find_rule_files(temp_dir.path()).unwrap();
+        let result = discovery.find_rule_files(project.root()).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].file_name().unwrap(), ".synapse.md");
+        assert_eq!(result[0].file_name().unwrap(), "rules.md");
+        assert!(result[0].to_string_lossy().contains(".synapse"));
     }
 
     #[test]
     fn test_find_rule_files_nested_directories() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        // Create nested directory structure
-        let src_dir = temp_dir.path().join("src");
-        let utils_dir = src_dir.join("utils");
-        fs::create_dir_all(&utils_dir).unwrap();
+        // Create nested .synapse directories 
+        project.create_nested_synapse(&["src", "src/utils"]).unwrap();
         
         // Create rule files at different levels
-        create_rule_file(temp_dir.path(), "# Root Rules");
-        create_rule_file(&src_dir, "# Src Rules");  
-        create_rule_file(&utils_dir, "# Utils Rules");
+        project.add_rule_file(".synapse/root.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
+        project.add_rule_file("src/.synapse/src_rules.md", &create_rule_content(&[("REQUIRED", "#[test]")])).unwrap();
+        project.add_rule_file("src/utils/.synapse/utils_rules.md", &create_rule_content(&[("STANDARD", "inline")])).unwrap();
         
-        let result = discovery.find_rule_files(temp_dir.path()).unwrap();
+        let result = discovery.find_rule_files(project.root()).unwrap();
         assert_eq!(result.len(), 3);
         
         // Should be sorted by path
-        assert!(result[0].to_string_lossy().contains(".synapse.md"));
-        assert!(result[1].to_string_lossy().contains("src/.synapse.md"));
-        assert!(result[2].to_string_lossy().contains("utils/.synapse.md"));
+        assert!(result[0].to_string_lossy().contains(".synapse/root.md"));
+        assert!(result[1].to_string_lossy().contains("src/.synapse/src_rules.md"));
+        assert!(result[2].to_string_lossy().contains("src/utils/.synapse/utils_rules.md"));
     }
 
     #[test]
     fn test_find_rule_files_ignores_other_files() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        // Create various files
-        fs::write(temp_dir.path().join("README.md"), "# README").unwrap();
-        fs::write(temp_dir.path().join("rules.md"), "# Not a rule file").unwrap();
-        create_rule_file(temp_dir.path(), "# Actual rule file");
+        // Create various files that should be ignored
+        project.add_file("README.md", "# README").unwrap();
+        project.add_file("rules.md", "# Not a rule file").unwrap();
+        project.add_rule_file(".synapse/actual_rule.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
         
-        let result = discovery.find_rule_files(temp_dir.path()).unwrap();
+        let result = discovery.find_rule_files(project.root()).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].file_name().unwrap(), ".synapse.md");
+        assert_eq!(result[0].file_name().unwrap(), "actual_rule.md");
     }
 
     #[test]
     fn test_is_rule_file() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        let rule_file = create_rule_file(temp_dir.path(), "# Test Rule");
-        let other_file = temp_dir.path().join("other.md");
-        fs::write(&other_file, "# Other file").unwrap();
+        let rule_file = project.add_rule_file(".synapse/test_rule.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
+        let other_file = project.add_file("other.md", "# Other file").unwrap();
         
         assert!(discovery.is_rule_file(&rule_file));
         assert!(!discovery.is_rule_file(&other_file));
-        assert!(!discovery.is_rule_file(temp_dir.path())); // Directory
+        assert!(!discovery.is_rule_file(project.root())); // Directory
     }
 
     #[test]
-    fn test_find_parent_rule_file() {
-        let temp_dir = TempDir::new().unwrap();
+    fn test_find_parent_rule_files() {
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
         // Create nested structure with rule file at root
-        let src_dir = temp_dir.path().join("src");
-        let file_path = src_dir.join("main.rs");
-        fs::create_dir_all(&src_dir).unwrap();
-        fs::write(&file_path, "// main.rs").unwrap();
+        project.add_file("src/main.rs", "// main.rs").unwrap();
+        let root_rule_file = project.add_rule_file(".synapse/root_rules.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
         
-        let root_rule_file = create_rule_file(temp_dir.path(), "# Root Rules");
-        
+        let file_path = project.path("src/main.rs");
         let result = discovery.find_parent_rule_files(&file_path);
         assert!(!result.is_empty());
         assert_eq!(result[0], root_rule_file);
     }
 
     #[test]
-    fn test_find_parent_rule_file_none() {
-        let temp_dir = TempDir::new().unwrap();
+    fn test_find_parent_rule_files_none() {
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        let file_path = temp_dir.path().join("main.rs");
-        fs::write(&file_path, "// main.rs").unwrap();
+        project.add_file("main.rs", "// main.rs").unwrap();
         
+        let file_path = project.path("main.rs");
         let result = discovery.find_parent_rule_files(&file_path);
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_find_inheritance_chain() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
         // Create nested structure: root -> src -> utils -> deep
-        let src_dir = temp_dir.path().join("src");
-        let utils_dir = src_dir.join("utils");
-        let deep_dir = utils_dir.join("deep");
-        fs::create_dir_all(&deep_dir).unwrap();
+        project.create_nested_synapse(&["src", "src/utils"]).unwrap();
+        project.add_file("src/utils/deep/file.rs", "// deep file").unwrap();
         
-        // Create rule files at root and src levels (skip utils)
-        create_rule_file(temp_dir.path(), "# Root Rules");
-        create_rule_file(&src_dir, "# Src Rules");
+        // Create rule files at root and src levels (skip utils level)
+        project.add_rule_file(".synapse/root_rules.md", &create_rule_content(&[("FORBIDDEN", "TODO")])).unwrap();
+        project.add_rule_file("src/.synapse/src_rules.md", &create_rule_content(&[("REQUIRED", "#[test]")])).unwrap();
         
-        let target_file = deep_dir.join("file.rs");
-        fs::write(&target_file, "// deep file").unwrap();
-        
+        let target_file = project.path("src/utils/deep/file.rs");
         let chain = discovery.find_inheritance_chain(&target_file);
         
-        // Should find 2 rule files in the chain (closest first)
+        // Should find 2 rule files in the chain (closest first: src, then root)
         assert_eq!(chain.len(), 2);
-        assert!(chain[0].to_string_lossy().contains("src/.synapse.md"));
-        assert!(chain[1].to_string_lossy().contains(".synapse.md"));
+        assert!(chain[0].to_string_lossy().contains("src/.synapse/src_rules.md"));
+        assert!(chain[1].to_string_lossy().contains(".synapse/root_rules.md"));
         assert!(!chain[1].to_string_lossy().contains("src/"));
     }
 
     #[test]
     fn test_find_inheritance_chain_empty() {
-        let temp_dir = TempDir::new().unwrap();
+        let project = TestProject::new().unwrap();
         let discovery = RuleDiscovery::new();
         
-        let file_path = temp_dir.path().join("main.rs");
-        fs::write(&file_path, "// main.rs").unwrap();
+        project.add_file("main.rs", "// main.rs").unwrap();
         
+        let file_path = project.path("main.rs");
         let chain = discovery.find_inheritance_chain(&file_path);
         assert_eq!(chain.len(), 0);
     }
