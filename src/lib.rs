@@ -9,6 +9,7 @@ pub mod enforcement;
 pub mod api_models;
 pub mod formatting;
 pub mod config;
+pub mod auth;
 
 
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
@@ -30,4 +31,5 @@ pub use formatting::{
     get_formatter, FormattableContext
 };
 pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig, LoggingConfig};
+pub use auth::{AuthMiddleware, extract_bearer_token};
 

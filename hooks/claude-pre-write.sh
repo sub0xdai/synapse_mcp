@@ -8,6 +8,7 @@ set -e
 
 # Configuration
 SYNAPSE_MCP_URL="${SYNAPSE_MCP_URL:-http://localhost:8080}"
+SYNAPSE_AUTH_TOKEN="${SYNAPSE_AUTH_TOKEN:-}"
 TEMP_FILE=$(mktemp /tmp/synapse_content.XXXXXX)
 RESPONSE_FILE=$(mktemp /tmp/synapse_response.XXXXXX)
 
@@ -49,7 +50,7 @@ fi
 FILE_PATH="$1"
 CONTENT="$2"
 
-# Check if MCP server is running
+# Check if MCP server is running (health endpoint is always public)
 if ! curl -s -f "$SYNAPSE_MCP_URL/health" > /dev/null 2>&1; then
     log_warning "Synapse MCP server not running at $SYNAPSE_MCP_URL"
     log_info "Starting in standalone mode (no rule validation)"
@@ -59,13 +60,22 @@ fi
 
 log_info "Validating content for: $FILE_PATH"
 
+# Prepare curl headers
+CURL_HEADERS=("-H" "Content-Type: application/json")
+
+# Add authentication header if token is available
+if [ -n "$SYNAPSE_AUTH_TOKEN" ]; then
+    CURL_HEADERS+=("-H" "Authorization: Bearer $SYNAPSE_AUTH_TOKEN")
+    log_info "Using authentication token"
+fi
+
 # Send request to pre-write endpoint with secure JSON construction
 if jq -n \
     --arg path "$FILE_PATH" \
     --arg content "$CONTENT" \
     '{"data": {"file_path": $path, "content": $content}}' | \
   curl -s --connect-timeout 5 --max-time 10 -X POST "$SYNAPSE_MCP_URL/enforce/pre-write" \
-    -H "Content-Type: application/json" \
+    "${CURL_HEADERS[@]}" \
     --data-binary @- \
     -o "$RESPONSE_FILE" 2>/dev/null; then
     

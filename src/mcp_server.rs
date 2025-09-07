@@ -6,11 +6,13 @@ pub use pattern_enforcer::{
 };
 
 use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse};
+use crate::auth::AuthMiddleware;
 use axum::{
     extract::{State, Path},
     response::Json,
     routing::{post, get},
     Router,
+    middleware,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -60,6 +62,7 @@ pub struct ServerConfig {
     pub host: String,
     pub graph: graph::Graph,
     pub enforcer: Option<PatternEnforcer>,
+    pub auth_token: Option<String>,
 }
 
 impl std::fmt::Debug for ServerConfig {
@@ -69,6 +72,7 @@ impl std::fmt::Debug for ServerConfig {
             .field("host", &self.host)
             .field("graph", &"<Graph>")  // Don't debug the complex graph
             .field("enforcer", &self.enforcer.as_ref().map(|_| "<PatternEnforcer>"))
+            .field("auth_token", &self.auth_token.as_ref().map(|_| "<REDACTED>")) // Never show token
             .finish()
     }
 }
@@ -79,6 +83,7 @@ pub struct ServerConfigBuilder {
     host: Option<String>,
     graph: Option<graph::Graph>,
     enforcer: Option<PatternEnforcer>,
+    auth_token: Option<String>,
 }
 
 impl ServerConfigBuilder {
@@ -89,6 +94,7 @@ impl ServerConfigBuilder {
             host: None,
             graph: None,
             enforcer: None,
+            auth_token: None,
         }
     }
 
@@ -116,6 +122,12 @@ impl ServerConfigBuilder {
         self
     }
 
+    /// Set the authentication token for the server (optional)
+    pub fn auth_token(mut self, auth_token: Option<String>) -> Self {
+        self.auth_token = auth_token;
+        self
+    }
+
     /// Build the ServerConfig, validating that all required fields are set
     pub fn build(self) -> Result<ServerConfig> {
         let port = self.port.ok_or_else(|| {
@@ -135,6 +147,7 @@ impl ServerConfigBuilder {
             host,
             graph,
             enforcer: self.enforcer,
+            auth_token: self.auth_token,
         })
     }
 }
@@ -153,26 +166,56 @@ pub async fn create_server_with_enforcer(
     graph: graph::Graph, 
     enforcer: Option<PatternEnforcer>
 ) -> Router {
+    create_server_with_auth(graph, enforcer, None).await
+}
+
+pub async fn create_server_with_auth(
+    graph: graph::Graph, 
+    enforcer: Option<PatternEnforcer>,
+    auth_token: Option<String>
+) -> Router {
     let state = ServerState {
         graph: Arc::new(graph),
         enforcer: enforcer.map(Arc::new),
     };
 
+    // Create authentication middleware
+    let auth = AuthMiddleware::new(auth_token.clone());
+    let auth_required = auth_token.is_some();
+
+    // Unprotected routes (always accessible)
     let mut router = Router::new()
+        .route("/health", get(health_check));
+    
+    // Protected routes that require authentication when enabled
+    let mut protected_router = Router::new()
         .route("/query", post(handle_query))
         .route("/nodes/:type", get(handle_nodes_by_type))
-        .route("/node/:id/related", get(handle_related_nodes))
-        .route("/health", get(health_check));
+        .route("/node/:id/related", get(handle_related_nodes));
     
     // Add enforcement endpoints if PatternEnforcer is available
     if state.enforcer.is_some() {
         debug!("Adding rule enforcement endpoints");
-        router = router
+        protected_router = protected_router
             .route("/enforce/check", post(handle_enforce_check))
             .route("/enforce/context", post(handle_enforce_context))
             .route("/enforce/pre-write", post(handle_enforce_pre_write))
             .route("/rules/for-path", post(handle_rules_for_path));
     }
+
+    // Apply authentication middleware to protected routes if auth is enabled
+    if auth_required {
+        info!("🔒 Authentication enabled for protected endpoints");
+        protected_router = protected_router.layer(middleware::from_fn(move |req, next| {
+            let auth = auth.clone();
+            async move { auth.call(req, next).await }
+        }));
+    } else {
+        debug!("🔓 Authentication disabled - all endpoints public");
+    }
+
+    // Merge protected routes into main router
+    router = router.merge(protected_router);
     
     router
         .layer(
@@ -187,12 +230,18 @@ pub async fn create_server_with_enforcer(
 #[instrument(skip(config))]
 pub async fn start_server(config: ServerConfig) -> Result<()> {
     let has_enforcer = config.enforcer.is_some();
-    let app = create_server_with_enforcer(config.graph, config.enforcer).await;
+    let has_auth = config.auth_token.is_some();
+    let app = create_server_with_auth(config.graph, config.enforcer, config.auth_token).await;
     let addr = format!("{}:{}", config.host, config.port);
     
     info!("🚀 Starting Synapse MCP server on {}", addr);
     if has_enforcer {
         info!("✅ Rule enforcement endpoints enabled");
+    }
+    if has_auth {
+        info!("🔒 Authentication enabled for protected endpoints");
+    } else {
+        info!("🔓 Authentication disabled - all endpoints public");
     }
     
     let listener = TcpListener::bind(&addr).await
@@ -885,6 +934,7 @@ mod tests {
                         host: "localhost".to_string(),
                         graph: mock_graph,
                         enforcer: None,
+                        auth_token: None,
                     };
                     
                     let debug_output = format!("{:?}", config);

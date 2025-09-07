@@ -28,6 +28,8 @@ pub struct Neo4jConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    #[serde(skip_serializing)] // Never serialize auth token for security
+    pub auth_token: Option<String>,
 }
 
 /// Runtime configuration
@@ -74,6 +76,7 @@ impl Default for ServerConfig {
         Self {
             host: "localhost".to_string(),
             port: 8080,
+            auth_token: None,
         }
     }
 }
@@ -171,6 +174,7 @@ impl Config {
             server: ServerConfig {
                 host: "127.0.0.1".to_string(),
                 port: 0, // Use any available port
+                auth_token: None, // No auth for testing by default
             },
             runtime: RuntimeConfig {
                 verbose: true,
@@ -223,6 +227,11 @@ impl Config {
             self.runtime.context_file = PathBuf::from(context_file);
         }
 
+        // Authentication token
+        if let Ok(auth_token) = std::env::var("SYNAPSE_AUTH_TOKEN") {
+            self.server.auth_token = Some(auth_token);
+        }
+
         Ok(())
     }
 }
@@ -256,6 +265,7 @@ mod tests {
             ("SYNAPSE_SERVER_PORT", env::var("SYNAPSE_SERVER_PORT").ok()),
             ("SYNAPSE_RUNTIME_VERBOSE", env::var("SYNAPSE_RUNTIME_VERBOSE").ok()),
             ("SYNAPSE_RUNTIME_CONTEXT_FILE", env::var("SYNAPSE_RUNTIME_CONTEXT_FILE").ok()),
+            ("SYNAPSE_AUTH_TOKEN", env::var("SYNAPSE_AUTH_TOKEN").ok()),
         ];
         
         // Clear environment
@@ -295,6 +305,7 @@ mod tests {
         
         assert_eq!(config.server.host, "localhost");
         assert_eq!(config.server.port, 8080);
+        assert_eq!(config.server.auth_token, None);
         
         assert_eq!(config.runtime.verbose, false);
         assert_eq!(config.runtime.context_file, PathBuf::from(".synapse_context"));
@@ -309,6 +320,7 @@ mod tests {
         assert_eq!(config.neo4j.password, "test");
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 0);
+        assert_eq!(config.server.auth_token, None);
         assert_eq!(config.runtime.verbose, true);
     }
 
@@ -329,6 +341,7 @@ max_connections = 20
 [server]
 host = "0.0.0.0"
 port = 9090
+# auth_token is loaded from environment variable SYNAPSE_AUTH_TOKEN
 
 [runtime]
 verbose = true
@@ -347,6 +360,7 @@ context_file = "/tmp/test_context"
         
         assert_eq!(config.server.host, "0.0.0.0");
         assert_eq!(config.server.port, 9090);
+        assert_eq!(config.server.auth_token, None); // Not loaded from file
         
         assert_eq!(config.runtime.verbose, true);
         assert_eq!(config.runtime.context_file, PathBuf::from("/tmp/test_context"));

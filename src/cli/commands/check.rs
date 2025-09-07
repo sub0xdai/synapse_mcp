@@ -191,6 +191,7 @@ fn display_check_results(result: &CheckResult, verbose: bool) {
 mod tests {
     use super::*;
     use synapse_mcp::{Rule, CompiledRule};
+    use std::path::Path;
 
     #[test]
     fn test_check_forbidden_pattern() {

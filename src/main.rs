@@ -381,7 +381,8 @@ async fn run_command(matches: clap::ArgMatches) -> anyhow::Result<()> {
             let mut config_builder = ServerConfigBuilder::new()
                 .port(config.server.port)
                 .host(config.server.host.clone())
-                .graph(graph_conn);
+                .graph(graph_conn)
+                .auth_token(config.server.auth_token.clone());
             
             // Add PatternEnforcer if requested
             if enable_enforcer {
