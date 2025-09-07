@@ -11,6 +11,7 @@ pub use error_response::{
 
 use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse};
 use crate::auth::AuthMiddleware;
+use crate::health::{HealthService, ServiceStatus};
 use axum::{
     extract::{State, Path},
     response::Json,
@@ -26,10 +27,21 @@ use tracing::{info, error, warn, debug, instrument};
 use tokio::signal;
 use std::time::Duration;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ServerState {
     pub graph: Arc<graph::Graph>,
     pub enforcer: Option<Arc<PatternEnforcer>>,
+    pub health_service: Arc<HealthService>,
+}
+
+impl std::fmt::Debug for ServerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerState")
+            .field("graph", &"<Graph>")
+            .field("enforcer", &self.enforcer.as_ref().map(|_| "<PatternEnforcer>"))
+            .field("health_service", &"<HealthService>")
+            .finish()
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -178,9 +190,17 @@ pub async fn create_server_with_auth(
     enforcer: Option<PatternEnforcer>,
     auth_token: Option<String>
 ) -> Router {
+    let graph_arc = Arc::new(graph);
+    
+    // Create health service with graph and optional cache
+    // Note: Cache integration would be added here when available
+    // We pass a new Graph instance - health service will manage its own connection
+    let health_service = HealthService::new_with_arc(graph_arc.clone(), None);
+    
     let state = ServerState {
-        graph: Arc::new(graph),
+        graph: graph_arc,
         enforcer: enforcer.map(Arc::new),
+        health_service: Arc::new(health_service),
     };
 
     // Create authentication middleware
@@ -189,7 +209,8 @@ pub async fn create_server_with_auth(
 
     // Unprotected routes (always accessible)
     let mut router = Router::new()
-        .route("/health", get(health_check));
+        .route("/health", get(handle_health_check))
+        .route("/status", get(handle_status_check));
     
     // Protected routes that require authentication when enabled
     let mut protected_router = Router::new()
@@ -441,147 +462,79 @@ async fn handle_rules_for_path(
     Ok(Json(response))
 }
 
-/// Detailed health check response
-#[derive(Serialize)]
-struct HealthCheckResponse {
-    status: String,
-    service: String,
-    version: String,
-    timestamp: String,
-    components: HealthComponents,
-    features: Vec<String>,
-    uptime_seconds: u64,
-}
-
-#[derive(Serialize)]
-struct HealthComponents {
-    neo4j: ComponentHealth,
-    rule_graph: ComponentHealth,
-    pattern_enforcer: ComponentHealth,
-}
-
-#[derive(Serialize)]
-struct ComponentHealth {
-    status: String, // "healthy", "unhealthy", "degraded", "disabled"
-    details: Option<String>,
-    metrics: Option<serde_json::Value>,
-}
-
-#[instrument]
-async fn health_check(State(state): State<ServerState>) -> Result<Json<HealthCheckResponse>> {
-    let start_time = std::time::SystemTime::now();
-    
-    // Check Neo4j connection
-    let neo4j_health = check_neo4j_health(&state.graph).await;
-    
-    // Check rule graph status (if available)
-    let rule_graph_health = check_rule_graph_health(&state).await;
-    
-    // Check pattern enforcer status
-    let pattern_enforcer_health = check_pattern_enforcer_health(&state).await;
-    
-    // Determine overall status
-    let overall_status = if neo4j_health.status == "healthy" && 
-                           rule_graph_health.status != "unhealthy" && 
-                           pattern_enforcer_health.status != "unhealthy" {
-        "healthy"
-    } else if neo4j_health.status == "unhealthy" {
-        "unhealthy" 
-    } else {
-        "degraded"
-    };
-    
-    let mut features = vec!["knowledge_graph".to_string()];
-    if state.enforcer.is_some() {
-        features.push("pattern_enforcement".to_string());
+/// Simple health check handler - returns plain "OK" for load balancers
+/// 
+/// This endpoint is designed to be very fast and lightweight for load balancer health checks.
+#[instrument(skip(state))]
+async fn handle_health_check(State(state): State<ServerState>) -> Result<&'static str> {
+    match state.health_service.check_health().await {
+        Ok(_) => {
+            debug!("Health check passed");
+            Ok("OK")
+        }
+        Err(e) => {
+            warn!("Health check failed: {}", e);
+            // Return 200 OK even for unhealthy status - let load balancer decide based on content
+            Ok("UNHEALTHY")
+        }
     }
-    
-    let health_response = HealthCheckResponse {
-        status: overall_status.to_string(),
-        service: "synapse-mcp-server".to_string(),
-        version: "0.2.0".to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        components: HealthComponents {
-            neo4j: neo4j_health,
-            rule_graph: rule_graph_health,
-            pattern_enforcer: pattern_enforcer_health,
-        },
-        features,
-        uptime_seconds: start_time.elapsed().unwrap_or_default().as_secs(),
-    };
-    
-    // Log health check
-    match overall_status {
-        "healthy" => debug!("Health check passed: all systems healthy"),
-        "degraded" => warn!("Health check degraded: some systems experiencing issues"),
-        "unhealthy" => error!("Health check failed: critical systems unhealthy"),
-        _ => {}
-    }
-    
-    Ok(Json(health_response))
 }
 
-async fn check_neo4j_health(graph: &Arc<graph::Graph>) -> ComponentHealth {
-    // Try to execute a simple query to verify Neo4j connectivity
-    match graph.health_check().await {
-        Ok(true) => ComponentHealth {
-            status: "healthy".to_string(),
-            details: Some("Connection verified".to_string()),
-            metrics: Some(serde_json::json!({
-                "connection_pool": "active",
-                "last_query": chrono::Utc::now().to_rfc3339()
-            })),
-        },
-        Ok(false) | Err(_) => {
-            warn!("Neo4j health check failed");
-            ComponentHealth {
-                status: "unhealthy".to_string(),
-                details: Some("Connection failed".to_string()),
-                metrics: None,
+/// Detailed status check handler - returns comprehensive JSON status
+/// 
+/// This endpoint provides detailed information about all service dependencies
+/// and is designed for monitoring and alerting systems.
+#[instrument(skip(state))]
+async fn handle_status_check(State(state): State<ServerState>) -> Result<Json<ServiceStatus>> {
+    let status = state.health_service.get_detailed_status().await
+        .unwrap_or_else(|e| {
+            error!("Failed to get detailed status: {}", e);
+            // Return a fallback status when health service fails
+            ServiceStatus {
+                status: crate::health::HealthStatus::Unhealthy,
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                uptime_seconds: 0,
+                dependencies: crate::health::DependencyStatus {
+                    neo4j: crate::health::Neo4jHealth {
+                        status: crate::health::HealthStatus::Unhealthy,
+                        latency_ms: 0,
+                        connection_pool: crate::health::ConnectionPoolHealth {
+                            active: 0,
+                            idle: 0,
+                            max: 0,
+                            utilization_percent: 0.0,
+                        },
+                        message: Some("Health service unavailable".to_string()),
+                    },
+                    cache: None,
+                },
+                system: crate::health::SystemHealth {
+                    memory_used_mb: 0,
+                    memory_available_mb: 0,
+                    memory_usage_percent: 0.0,
+                    cpu_usage_percent: 0.0,
+                },
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or(std::time::Duration::ZERO)
+                    .as_secs(),
             }
-        }
-    }
-}
+        });
 
-async fn check_rule_graph_health(state: &ServerState) -> ComponentHealth {
-    // For now, just check if we have an enforcer (which implies rule graph is loaded)  
-    // In the future, we could add more sophisticated checks
-    if let Some(_enforcer) = &state.enforcer {
-        // Try to get rule count or other metrics from the enforcer
-        ComponentHealth {
-            status: "healthy".to_string(),
-            details: Some("Rule graph loaded".to_string()),
-            metrics: Some(serde_json::json!({
-                "rules_loaded": true,
-                "last_refresh": chrono::Utc::now().to_rfc3339()
-            })),
+    // Log status based on health
+    match status.status {
+        crate::health::HealthStatus::Healthy => {
+            debug!("Status check: all systems healthy")
         }
-    } else {
-        ComponentHealth {
-            status: "disabled".to_string(),
-            details: Some("Rule enforcement not enabled".to_string()),
-            metrics: None,
+        crate::health::HealthStatus::Degraded => {
+            warn!("Status check: some systems degraded")
+        }
+        crate::health::HealthStatus::Unhealthy => {
+            error!("Status check: critical systems unhealthy")
         }
     }
-}
-
-async fn check_pattern_enforcer_health(state: &ServerState) -> ComponentHealth {
-    if let Some(_enforcer) = &state.enforcer {
-        ComponentHealth {
-            status: "healthy".to_string(),
-            details: Some("Pattern enforcer active".to_string()),
-            metrics: Some(serde_json::json!({
-                "enforcement_enabled": true,
-                "endpoints_active": ["check", "context", "rules-for-path"]
-            })),
-        }
-    } else {
-        ComponentHealth {
-            status: "disabled".to_string(),
-            details: Some("Pattern enforcement not enabled".to_string()),
-            metrics: None,
-        }
-    }
+    
+    Ok(Json(status))
 }
 
 #[cfg(test)]

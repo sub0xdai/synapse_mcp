@@ -14,6 +14,7 @@ pub mod auth;
 pub mod ast_analysis;
 pub mod cache;
 pub mod db;
+pub mod health;
 
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
@@ -45,6 +46,10 @@ pub use graph::Graph;
 pub use graph_pooled::PooledGraph;
 pub use auth::{AuthMiddleware, extract_bearer_token};
 pub use ast_analysis::{AstAnalysisError, AstResult, ast_fixes_available};
+pub use health::{
+    HealthService, HealthStatus, ServiceStatus, DependencyStatus, SystemHealth, 
+    Neo4jHealth, CacheHealth, HealthChecker
+};
 
 #[cfg(feature = "ast-fixes")]
 pub use ast_analysis::{UnwrapReplacer, Replacement, safely_replace_unwrap};

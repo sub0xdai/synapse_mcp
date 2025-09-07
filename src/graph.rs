@@ -2,6 +2,7 @@
 use crate::{Node, Edge, NodeType, EdgeType, Result, SynapseError};
 use neo4rs::{Graph as Neo4jGraph, ConfigBuilder};
 use std::env;
+use tracing::instrument;
 
 // Re-export pooled graph functionality for advanced users
 pub use crate::graph_pooled::{PooledGraph, create_node_pooled, create_edge_pooled, query_nodes_by_type_pooled, find_related_nodes_pooled, delete_node_pooled, execute_query_pooled};
@@ -210,6 +211,7 @@ async fn connect_direct(uri: &str, user: &str, password: &str) -> Result<Neo4jGr
     Ok(client)
 }
 
+#[instrument(skip(graph), fields(node_id = %node.id, node_type = ?node.node_type))]
 pub async fn create_node(graph: &Graph, node: &Node) -> Result<()> {
     node.validate()?;
     
@@ -242,6 +244,7 @@ pub async fn create_node(graph: &Graph, node: &Node) -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip(graph), fields(source_id = %edge.source_id, target_id = %edge.target_id, edge_type = ?edge.edge_type))]
 pub async fn create_edge(graph: &Graph, edge: &Edge) -> Result<()> {
     edge.validate()?;
     
@@ -272,6 +275,7 @@ pub async fn create_edge(graph: &Graph, edge: &Edge) -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip(graph), fields(node_type = ?node_type))]
 pub async fn query_nodes_by_type(graph: &Graph, node_type: &NodeType) -> Result<Vec<Node>> {
     let query = "
         MATCH (n { node_type: $node_type })
@@ -301,6 +305,7 @@ pub async fn query_nodes_by_type(graph: &Graph, node_type: &NodeType) -> Result<
     ).await
 }
 
+#[instrument(skip(graph), fields(node_id = %node_id))]
 pub async fn find_related_nodes(graph: &Graph, node_id: &str) -> Result<Vec<(Node, Edge)>> {
     let query = "
         MATCH (n { id: $node_id })-[r]->(related)
@@ -362,6 +367,7 @@ pub async fn find_related_nodes(graph: &Graph, node_id: &str) -> Result<Vec<(Nod
     ).await
 }
 
+#[instrument(skip(graph), fields(query_length = query_text.len()))]
 pub async fn natural_language_query(graph: &Graph, query_text: &str) -> Result<String> {
     // Simple keyword-based search implementation
     let query_lower = query_text.to_lowercase();

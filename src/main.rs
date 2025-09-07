@@ -27,7 +27,13 @@ fn init_logging(config: &Config) -> anyhow::Result<()> {
             let layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_current_span(false)
-                .with_span_list(true);
+                .with_span_list(true)
+                .with_target(true)
+                .with_thread_ids(true)
+                .with_thread_names(true)
+                .with_file(true)
+                .with_line_number(true)
+                .flatten_event(true);
             subscriber.with(layer).init();
         }
         "compact" => {

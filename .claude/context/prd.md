@@ -20,7 +20,7 @@ Software developers using AI assistants (e.g., via Serena MCP) within their loca
 
 - **As a developer**, I want the system to use a **Write Hook** (e.g., a pre-commit hook) to check my changes against the rules, preventing non-compliant code from being committed.
 
-- **As a developer**, I want my AI assistant to use a **Read Hook** to receive real-time context and guidance from the system based on the file I'm editing, so it can generate compliant code from the start.
+- **As a developer**, I want my AI assistant to use a **Pre-Write Hook** that validates my code in real-time, providing instant feedback, context, and automated corrections based on project-specific rules.
 
 - **As a developer**, I want to configure different enforcement levels (e.g., `strict`, `standard`, `learning`) for different projects or teams to allow for progressive adoption and a smoother learning curve.
 

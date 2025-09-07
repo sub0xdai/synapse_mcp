@@ -1,10 +1,10 @@
 # Synapse Rules Documentation
 
-This document explains how to create and use `.synapse.md` files to define project-specific rules that Synapse MCP can enforce and provide as context to AI assistants.
+This document explains how to use Synapse MCP to define and enforce project-specific rules. Rules are defined in `.md` files located within `.synapse/` directories.
 
-## What are .synapse.md files?
+## What are Synapse Rule Files?
 
-`.synapse.md` files are Markdown documents with YAML frontmatter that define development rules for your project. They can be placed in any directory and will apply to all files within that directory and its subdirectories, following inheritance patterns.
+Synapse rule files are Markdown documents with YAML frontmatter that define development rules for your project. They are placed inside directories named `.synapse/`. These rules apply to all files within the directory containing `.synapse/` and all of its subdirectories, following inheritance patterns.
 
 ## File Structure
 
@@ -91,14 +91,16 @@ Note: Use proper escaping for regex special characters in patterns.
 ## Inheritance and Overrides
 
 ### Directory-Based Inheritance
-Rules are automatically inherited from parent directories:
+Rules are automatically inherited from parent directories containing a `.synapse/` folder:
 ```
 project/
-├── .synapse.md           # Root rules
+├── .synapse/
+│   └── global.md       # Root rules
 ├── src/
-│   ├── .synapse.md       # Inherits root + adds src-specific rules
+│   ├── .synapse/
+│   │   └── rust.md     # Inherits root rules + adds src-specific rules
 │   └── api/
-│       └── .synapse.md   # Inherits root + src + adds api-specific rules
+│       └── main.rs     # This file inherits rules from both ../.synapse/ and ../../.synapse/
 ```
 
 ### Explicit Inheritance
@@ -186,9 +188,12 @@ synapse enforce-context src/main.rs --output .context.md
 
 ### MCP Server Integration
 When running the MCP server with `--enable-enforcer`, it provides these endpoints:
-- `POST /enforce/check` - Validate files against rules
-- `POST /enforce/context` - Generate AI context for file paths
-- `POST /rules/for-path` - Get applicable rules for specific paths
+- `POST /enforce/pre-write` - Validates content in real-time before it is written to a file, providing instant feedback and auto-fixes.
+- `POST /enforce/check` - Validate saved files against rules.
+- `POST /enforce/context` - Generate AI context for file paths.
+- `POST /rules/for-path` - Get applicable rules for specific paths.
+
+**Note:** When authentication is enabled via `SYNAPSE_AUTH_TOKEN`, all `/enforce/*` endpoints require a valid Bearer Token.
 
 ## Best Practices
 

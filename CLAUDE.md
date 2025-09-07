@@ -45,6 +45,12 @@ cargo run -- serve --enable-enforcer     # Start with rule enforcement endpoints
 cargo run -- status                      # Check system and database health
 ```
 
+### Health Check Endpoints
+```bash
+curl http://localhost:8080/health         # Simple health check (returns "OK")
+curl http://localhost:8080/status         # Detailed health status (JSON)
+```
+
 ### Benchmarking
 ```bash
 cargo bench                    # Run performance benchmarks
@@ -83,6 +89,7 @@ The codebase follows a modular Rust architecture with these key components:
 - `src/enforcement.rs`: Rule validation and pattern matching (11k lines)
 - `src/rule_graph.rs`: Rule inheritance and relationship management (12k lines)
 - `src/config.rs`: Configuration management and environment setup (14k lines)
+- `src/health.rs`: Health monitoring and dependency checking system
 
 ### Data Flow
 - **Write Hook**: Developer → git commit → pre-commit → PatternEnforcer validation → rule indexing → Neo4j
@@ -99,6 +106,8 @@ The project implements a comprehensive rule enforcement and context generation s
 4. **Performance**: Sub-500ms rule validation, <100ms context generation
 5. **Neo4j Integration**: Full CRUD operations with relationship querying
 6. **MCP Protocol**: HTTP-based server with health checks and enforcement endpoints
+7. **Health Monitoring**: Comprehensive health checks with JSON status reporting
+8. **Structured Logging**: Enhanced JSON logging with tracing instrumentation
 
 Performance targets: Pre-commit hook validation <500ms, context generation <200ms, MCP queries <100ms.
 

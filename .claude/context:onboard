@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Context Onboard Slash Command
+# Onboards by retrieving all context files from .claude/context/ directory
+
+CONTEXT_DIR=".claude/context"
+
+if [ ! -d "$CONTEXT_DIR" ]; then
+    echo "❌ Context directory not found: $CONTEXT_DIR"
+    exit 1
+fi
+
+echo "📁 Retrieving all context from $CONTEXT_DIR"
+echo "================================================="
+
+# Find all markdown files in context directory
+find "$CONTEXT_DIR" -name "*.md" -type f | sort | while read -r file; do
+    if [ -f "$file" ]; then
+        echo ""
+        echo "📄 **$(basename "$file")**"
+        echo "---"
+        cat "$file"
+        echo ""
+        echo "================================================="
+    fi
+done
+
+echo ""
+echo "✅ Context retrieval complete"

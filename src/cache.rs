@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, trace};
+use tracing::{debug, trace, instrument};
 
 /// Cache key for rule resolution - uses canonical path representation
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -127,6 +127,7 @@ impl RuleCache {
     /// Get cached rules for a path, or None if not cached
     /// 
     /// This method is async to support Moka's future-based API.
+    #[instrument(skip(self), fields(path = %path.display()))]
     pub async fn get(&self, path: &Path) -> Option<CompositeRules> {
         let key = CacheKey::from_path(path);
         let result = self.cache.get(&key).await;
@@ -147,6 +148,7 @@ impl RuleCache {
     /// Insert rules for a path into the cache
     /// 
     /// This method is async to support Moka's future-based API.
+    #[instrument(skip(self, rules), fields(path = %path.display(), rule_count = rules.applicable_rules.len()))]
     pub async fn insert(&self, path: &Path, rules: CompositeRules) {
         let key = CacheKey::from_path(path);
         let rule_count = rules.applicable_rules.len();

@@ -3,9 +3,9 @@
 ## 1. Core Concept
 
 Synapse MCP operates with a dual-hook architecture for intelligent rule enforcement:
-- **Write Hook (PatternEnforcer):** Pre-commit validation against project rules
-- **Read Hook (Context Generation):** Real-time AI context with applicable rules
-- **Knowledge Graph:** Neo4j integration for advanced querying and relationships
+- **Write Hook (PatternEnforcer):** Pre-commit validation against project rules.
+- **Pre-Write Hook (Real-time Validation):** Intercepts code generation to validate and auto-fix content before it is written to disk.
+- **Knowledge Graph:** Neo4j integration for advanced querying and relationships.
 
 ## 2. Technology Stack
 
@@ -14,6 +14,8 @@ Synapse MCP operates with a dual-hook architecture for intelligent rule enforcem
 | PatternEnforcer | Rust | Real-time rule validation and context generation |
 | RuleGraph | Rust | In-memory rule inheritance and relationship tracking |
 | MCP Server | Rust (Axum Framework) | High-performance API with enforcement endpoints |
+| Caching Layer | Rust (Moka) | High-performance, thread-safe rule caching |
+| DB Connection Pool | Rust (bb8) | Asynchronous database connection pooling |
 | Core Logic/Indexer | Rust | Performance-critical parsing and indexing |
 | Knowledge Graph | Neo4j | Storing and querying connected data |
 | Hook Management | pre-commit Framework | User-friendly git hook installation |
@@ -40,9 +42,23 @@ File Path Query → Directory Mapping → rules_for_path → CompositeRules → 
 #### PatternEnforcer (`src/mcp_server/pattern_enforcer.rs`)
 - **Purpose:** Rule enforcement and context generation
 - **Capabilities:**
-  - File validation against FORBIDDEN/REQUIRED patterns
-  - Multi-format context generation (Markdown/JSON/Plain)
-  - Integration with MCP server endpoints
+  - Dual-mode analysis: Fast regex matching for simple patterns and AST-based analysis for complex, context-aware rules (e.g., safe auto-fixes).
+  - File validation against FORBIDDEN/REQUIRED patterns.
+  - Multi-format context generation (Markdown/JSON/Plain).
+
+#### RuleCache (`src/cache.rs`)
+- **Purpose:** High-performance, in-memory caching for resolved rule sets.
+- **Features:**
+  - Drastically reduces filesystem I/O for repeated requests.
+  - Uses Moka for a thread-safe, async-compatible cache.
+  - Configurable TTL and max entry limits.
+
+#### ConnectionPool (`src/db.rs`)
+- **Purpose:** Manages a pool of database connections.
+- **Features:**
+  - Prevents resource exhaustion by limiting and reusing connections.
+  - Uses bb8 for asynchronous connection pooling.
+  - Includes health monitoring for database connections.
 
 #### Rule Discovery (`src/rules/discovery.rs`)
 - **Purpose:** Recursive discovery of `.md` files in `.synapse/` directories
@@ -61,11 +77,11 @@ Developer → git commit → pre-commit hook → PatternEnforcer.check_files()
 RuleGraph.rules_for(file_path) → CompositeRules → Pattern Matching → Violations/Success
 ```
 
-### Read Path (AI Context Generation)
+### Pre-Write Path (Real-time Validation)
 ```
-Claude Code → context hook → MCP Server → PatternEnforcer.generate_context()
-                                              ↓
-RuleGraph.rules_for(file_path) → Rule Formatting → AI-Ready Context
+AI Assistant → Pre-Write Hook → MCP Server (/enforce/pre-write) → PatternEnforcer.validate_pre_write()
+                                                                        ↓
+                                    (RuleGraph + Cache) → CompositeRules → AST/Regex Matching → {valid: bool, fixed_content?: string}
 ```
 
 ### Neo4j Integration Path
@@ -75,16 +91,21 @@ Markdown files → Indexer → Neo4j DB → MCP Server → Natural Language Quer
 
 ## 5. MCP Server Endpoints
 
+### Security
+
+When configured with a `SYNAPSE_AUTH_TOKEN`, all `/enforce/*` and `/query` endpoints are protected. Clients must provide a valid `Authorization: Bearer <token>` header with all requests.
+
 ### Standard Endpoints
-- `GET /health` - Server health check
-- `POST /query` - Natural language queries to knowledge graph
-- `GET /nodes/:type` - Query nodes by type
-- `GET /node/:id/related` - Find related nodes
+- `GET /health` - Server health check (public).
+- `POST /query` - Natural language queries to knowledge graph.
+- `GET /nodes/:type` - Query nodes by type.
+- `GET /node/:id/related` - Find related nodes.
 
 ### PatternEnforcer Endpoints (when enabled)
-- `POST /enforce/check` - Validate files against rules (Write Hook)
-- `POST /enforce/context` - Generate AI context for file path (Read Hook)
-- `POST /rules/for-path` - Get applicable rules for a specific path
+- `POST /enforce/pre-write` - Real-time validation of in-memory content with auto-fix capabilities.
+- `POST /enforce/check` - Validate saved files against rules.
+- `POST /enforce/context` - Generate AI context for file path.
+- `POST /rules/for-path` - Get applicable rules for a specific path.
 
 ## 6. Rule File Format
 

@@ -1,5 +1,6 @@
 use crate::models::{CompiledRule, Violation, RuleType, PatternMatcher};
 use std::path::Path;
+use tracing::instrument;
 
 /// Central rule checking function for enforcing development rules
 /// 
@@ -53,6 +54,7 @@ use std::path::Path;
 /// 
 /// assert_eq!(violations.len(), 1);
 /// ```
+#[instrument(skip(content, rules), fields(file_path = %file_path.display(), content_length = content.len(), rule_count = rules.len()))]
 pub fn check_rules(
     file_path: &Path,
     content: &str, 
