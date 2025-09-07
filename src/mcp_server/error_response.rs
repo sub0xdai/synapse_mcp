@@ -75,6 +75,7 @@ impl IntoResponse for SynapseError {
             
             // Internal server errors (catch-all)
             SynapseError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Internal error: {}", msg)),
+            SynapseError::Database(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", msg)),
         };
 
         let error_response = ErrorResponse::new(message, status);

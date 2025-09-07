@@ -17,6 +17,9 @@ pub enum SynapseError {
     #[error("Neo4j error: {0}")]
     Neo4j(#[from] neo4rs::Error),
     
+    #[error("Database error: {0}")]
+    Database(String),
+    
     // HTTP API specific errors
     #[error("Authentication failed: {0}")]
     Authentication(String),

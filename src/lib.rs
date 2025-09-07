@@ -2,6 +2,7 @@ pub mod models;
 pub mod indexer;
 pub mod mcp_server;
 pub mod graph;
+pub mod graph_pooled;
 pub mod error;
 pub mod rules;
 pub mod rule_graph;
@@ -12,6 +13,7 @@ pub mod config;
 pub mod auth;
 pub mod ast_analysis;
 pub mod cache;
+pub mod db;
 
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
@@ -37,7 +39,10 @@ pub use formatting::{
     OutputFormatter, Formattable, MarkdownFormatter, JsonFormatter, PlainFormatter,
     get_formatter, FormattableContext
 };
-pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig, LoggingConfig};
+pub use config::{Config, Neo4jConfig, ServerConfig, RuntimeConfig, LoggingConfig, PoolConfig};
+pub use db::{ConnectionPool, PoolStats, PoolError, Neo4jConnectionManager};
+pub use graph::Graph;
+pub use graph_pooled::PooledGraph;
 pub use auth::{AuthMiddleware, extract_bearer_token};
 pub use ast_analysis::{AstAnalysisError, AstResult, ast_fixes_available};
 

@@ -13,7 +13,7 @@ pub struct Config {
     pub cache: CacheConfig,
 }
 
-/// Neo4j database configuration
+/// Neo4j database configuration with connection pooling support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Neo4jConfig {
     pub uri: String,
@@ -22,6 +22,25 @@ pub struct Neo4jConfig {
     pub database: String,
     pub fetch_size: usize,
     pub max_connections: usize,
+    /// Connection pool settings
+    pub pool: PoolConfig,
+}
+
+/// Connection pool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PoolConfig {
+    /// Minimum number of idle connections to maintain
+    pub min_idle: usize,
+    /// Maximum number of connections in the pool (same as max_connections for compatibility)
+    pub max_size: usize,
+    /// Connection timeout in seconds
+    pub connection_timeout_secs: u64,
+    /// How long to keep idle connections alive in seconds
+    pub idle_timeout_secs: u64,
+    /// Maximum lifetime of a connection in seconds
+    pub max_lifetime_secs: u64,
+    /// Enable connection pool metrics
+    pub metrics_enabled: bool,
 }
 
 /// Server configuration for MCP API
@@ -61,6 +80,28 @@ pub struct CacheConfig {
     pub metrics_enabled: bool,
 }
 
+impl Neo4jConfig {
+    /// Convert to connection manager configuration
+    pub fn to_connection_config(&self) -> crate::db::connection_manager::Neo4jConnectionConfig {
+        crate::db::connection_manager::Neo4jConnectionConfig::new(
+            self.uri.clone(),
+            self.user.clone(),
+            self.password.clone(),
+            self.database.clone(),
+        )
+        .with_fetch_size(self.fetch_size)
+        .with_timeout(self.pool.connection_timeout_secs)
+    }
+}
+
+impl PoolConfig {
+    /// Ensure max_size is consistent with max_connections
+    pub fn with_consistent_max_size(mut self, max_connections: usize) -> Self {
+        self.max_size = max_connections;
+        self
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -82,6 +123,20 @@ impl Default for Neo4jConfig {
             database: "neo4j".to_string(),
             fetch_size: 500,
             max_connections: 10,
+            pool: PoolConfig::default(),
+        }
+    }
+}
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            min_idle: 2,
+            max_size: 10, // Should match max_connections for compatibility
+            connection_timeout_secs: 30,
+            idle_timeout_secs: 600, // 10 minutes
+            max_lifetime_secs: 1800, // 30 minutes
+            metrics_enabled: true,
         }
     }
 }
@@ -196,6 +251,14 @@ impl Config {
                 database: "test".to_string(),
                 fetch_size: 100,
                 max_connections: 5,
+                pool: PoolConfig {
+                    min_idle: 1,
+                    max_size: 5,
+                    connection_timeout_secs: 10,
+                    idle_timeout_secs: 300,
+                    max_lifetime_secs: 600,
+                    metrics_enabled: false, // Disable metrics for testing
+                },
             },
             server: ServerConfig {
                 host: "127.0.0.1".to_string(),
