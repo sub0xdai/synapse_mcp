@@ -5,6 +5,7 @@ use axum::{
     extract::Request,
 };
 use subtle::ConstantTimeEq;
+use crate::{Result, SynapseError};
 
 /// Authentication middleware for protecting sensitive MCP endpoints
 /// 
@@ -62,39 +63,50 @@ impl AuthMiddleware {
     /// * Headers are parsed securely with proper validation
     pub async fn call(&self, request: Request, next: Next) -> Response {
         // If no token is required, allow all requests
+        if self.required_token.is_none() {
+            return next.run(request).await;
+        }
+
+        // Extract and validate authentication
+        match self.validate_request_auth(&request) {
+            Ok(true) => next.run(request).await,
+            Ok(false) | Err(_) => unauthorized_response(),
+        }
+    }
+
+    /// Validate authentication for a request
+    /// 
+    /// # Returns
+    /// 
+    /// * `Ok(true)` if authentication is valid
+    /// * `Ok(false)` if authentication fails
+    /// * `Err(SynapseError)` if there's an error processing the request
+    fn validate_request_auth(&self, request: &Request) -> Result<bool> {
         let required_token = match &self.required_token {
             Some(token) => token,
-            None => return next.run(request).await,
+            None => return Ok(true), // No auth required
         };
 
         // Extract Authorization header
-        let auth_header = match request.headers().get("authorization") {
-            Some(header) => header,
-            None => return unauthorized_response(),
-        };
+        let auth_header = request.headers()
+            .get("authorization")
+            .ok_or_else(|| SynapseError::Authentication("Missing Authorization header".to_string()))?;
 
         // Parse bearer token
-        let provided_token = match extract_bearer_token_from_header(auth_header) {
-            Some(token) => token,
-            None => return unauthorized_response(),
-        };
+        let provided_token = extract_bearer_token_from_header(auth_header)
+            .ok_or_else(|| SynapseError::Authentication("Invalid Authorization header format".to_string()))?;
 
         // Perform constant-time comparison
         let provided_bytes = provided_token.as_bytes();
         
         // Ensure both tokens are the same length for constant-time comparison
         if provided_bytes.len() != required_token.len() {
-            return unauthorized_response();
+            return Ok(false);
         }
 
         // Use constant-time comparison to prevent timing attacks
-        let tokens_match = provided_bytes.ct_eq(required_token).into();
-        
-        if tokens_match {
-            next.run(request).await
-        } else {
-            unauthorized_response()
-        }
+        let tokens_match: bool = provided_bytes.ct_eq(required_token).into();
+        Ok(tokens_match)
     }
 }
 
@@ -160,16 +172,63 @@ pub fn extract_bearer_token(headers: &HeaderMap) -> Option<&str> {
     extract_bearer_token_from_header(auth_header)
 }
 
+/// Validate bearer token against expected value with constant-time comparison
+/// 
+/// This function provides authentication validation that can be used by
+/// any part of the system requiring token-based authentication.
+/// 
+/// # Arguments
+/// 
+/// * `headers` - Request headers to extract token from
+/// * `expected_token` - The expected token value
+/// 
+/// # Returns
+/// 
+/// * `Ok(())` if authentication is valid
+/// * `Err(SynapseError::Authentication)` if authentication fails
+pub fn validate_bearer_token(headers: &HeaderMap, expected_token: &str) -> Result<()> {
+    let provided_token = extract_bearer_token(headers)
+        .ok_or_else(|| SynapseError::Authentication("Missing or invalid Authorization header".to_string()))?;
+    
+    let provided_bytes = provided_token.as_bytes();
+    let expected_bytes = expected_token.as_bytes();
+    
+    // Ensure both tokens are the same length for constant-time comparison
+    if provided_bytes.len() != expected_bytes.len() {
+        return Err(SynapseError::Authentication("Invalid token".to_string()));
+    }
+    
+    // Use constant-time comparison to prevent timing attacks
+    let tokens_match: bool = provided_bytes.ct_eq(expected_bytes).into();
+    
+    if tokens_match {
+        Ok(())
+    } else {
+        Err(SynapseError::Authentication("Invalid token".to_string()))
+    }
+}
+
 /// Create a standardized 401 Unauthorized response
 /// 
 /// Returns a minimal response without leaking authentication details.
 /// The response includes the WWW-Authenticate header as per RFC 7235.
 fn unauthorized_response() -> Response {
-    Response::builder()
+    // This should never fail with static values, but use proper error handling
+    // following our "no unwrap in production code" principle
+    match Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header("WWW-Authenticate", "Bearer")
         .body(axum::body::Body::from("Unauthorized"))
-        .unwrap()
+    {
+        Ok(response) => response,
+        Err(_) => {
+            // Fallback response if header construction fails (extremely unlikely)
+            Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(axum::body::Body::from("Unauthorized"))
+                .expect("Fallback response creation should never fail")
+        }
+    }
 }
 
 #[cfg(test)]

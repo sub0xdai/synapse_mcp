@@ -1,8 +1,12 @@
 // Re-export all functionality from the new module structure
 pub mod pattern_enforcer;
+pub mod error_response;
 
 pub use pattern_enforcer::{
     PatternEnforcer,
+};
+pub use error_response::{
+    ErrorResponse,
 };
 
 use crate::{graph, Result, SynapseError, NodeType, CheckRequest, CheckResponse, ContextRequest, ContextResponse, RulesForPathRequest, RulesForPathResponse, PreWriteRequest, PreWriteResponse};
@@ -342,25 +346,19 @@ pub async fn start_server_with_enforcer(
 async fn handle_query(
     State(state): State<ServerState>,
     Json(request): Json<QueryRequest>,
-) -> Json<QueryResponse> {
-    match graph::natural_language_query(&state.graph, &request.query).await {
-        Ok(result) => Json(QueryResponse {
-            result,
-            success: true,
-            error: None,
-        }),
-        Err(e) => Json(QueryResponse {
-            result: String::new(),
-            success: false,
-            error: Some(e.to_string()),
-        }),
-    }
+) -> Result<Json<QueryResponse>> {
+    let result = graph::natural_language_query(&state.graph, &request.query).await?;
+    Ok(Json(QueryResponse {
+        result,
+        success: true,
+        error: None,
+    }))
 }
 
 async fn handle_nodes_by_type(
     State(state): State<ServerState>,
     Path(node_type_str): Path<String>,
-) -> Json<NodesResponse> {
+) -> Result<Json<NodesResponse>> {
     let node_type = match node_type_str.to_lowercase().as_str() {
         "file" => NodeType::File,
         "rule" => NodeType::Rule,
@@ -369,109 +367,78 @@ async fn handle_nodes_by_type(
         "architecture" => NodeType::Architecture,
         "component" => NodeType::Component,
         _ => {
-            return Json(NodesResponse {
-                nodes: Vec::new(),
-                count: 0,
-                success: false,
-                error: Some(format!("Invalid node type: {}", node_type_str)),
-            });
+            return Err(SynapseError::BadRequest(format!("Invalid node type: {}", node_type_str)));
         }
     };
 
-    match graph::query_nodes_by_type(&state.graph, &node_type).await {
-        Ok(nodes) => Json(NodesResponse {
-            count: nodes.len(),
-            nodes,
-            success: true,
-            error: None,
-        }),
-        Err(e) => Json(NodesResponse {
-            nodes: Vec::new(),
-            count: 0,
-            success: false,
-            error: Some(e.to_string()),
-        }),
-    }
+    let nodes = graph::query_nodes_by_type(&state.graph, &node_type).await?;
+    Ok(Json(NodesResponse {
+        count: nodes.len(),
+        nodes,
+        success: true,
+        error: None,
+    }))
 }
 
 async fn handle_related_nodes(
     State(state): State<ServerState>,
     Path(node_id): Path<String>,
-) -> Json<RelatedResponse> {
-    match graph::find_related_nodes(&state.graph, &node_id).await {
-        Ok(related) => Json(RelatedResponse {
-            count: related.len(),
-            related,
-            success: true,
-            error: None,
-        }),
-        Err(e) => Json(RelatedResponse {
-            related: Vec::new(),
-            count: 0,
-            success: false,
-            error: Some(e.to_string()),
-        }),
-    }
+) -> Result<Json<RelatedResponse>> {
+    let related = graph::find_related_nodes(&state.graph, &node_id).await?;
+    Ok(Json(RelatedResponse {
+        count: related.len(),
+        related,
+        success: true,
+        error: None,
+    }))
 }
 
 async fn handle_enforce_check(
     State(state): State<ServerState>,
     Json(request): Json<CheckRequest>,
-) -> Json<CheckResponse> {
-    match &state.enforcer {
-        Some(enforcer) => {
-            match enforcer.check_files(request) {
-                Ok(response) => Json(response),
-                Err(e) => Json(CheckResponse::error(e.to_string())),
-            }
-        }
-        None => Json(CheckResponse::error("PatternEnforcer not available".to_string())),
-    }
+) -> Result<Json<CheckResponse>> {
+    let enforcer = state.enforcer
+        .as_ref()
+        .ok_or_else(|| SynapseError::Configuration("PatternEnforcer not available".to_string()))?;
+    
+    let response = enforcer.check_files(request)?;
+    Ok(Json(response))
 }
 
 async fn handle_enforce_context(
     State(state): State<ServerState>,
     Json(request): Json<ContextRequest>,
-) -> Json<ContextResponse> {
-    match &state.enforcer {
-        Some(enforcer) => {
-            match enforcer.generate_context(request) {
-                Ok(response) => Json(response),
-                Err(e) => Json(ContextResponse::error(e.to_string())),
-            }
-        }
-        None => Json(ContextResponse::error("PatternEnforcer not available".to_string())),
-    }
+) -> Result<Json<ContextResponse>> {
+    let enforcer = state.enforcer
+        .as_ref()
+        .ok_or_else(|| SynapseError::Configuration("PatternEnforcer not available".to_string()))?;
+    
+    let response = enforcer.generate_context(request)?;
+    Ok(Json(response))
 }
 
 async fn handle_enforce_pre_write(
     State(state): State<ServerState>,
     Json(request): Json<PreWriteRequest>,
-) -> Json<PreWriteResponse> {
-    match &state.enforcer {
-        Some(enforcer) => {
-            match enforcer.validate_pre_write(request) {
-                Ok(response) => Json(response),
-                Err(e) => Json(PreWriteResponse::error(e.to_string())),
-            }
-        }
-        None => Json(PreWriteResponse::error("PatternEnforcer not available".to_string())),
-    }
+) -> Result<Json<PreWriteResponse>> {
+    let enforcer = state.enforcer
+        .as_ref()
+        .ok_or_else(|| SynapseError::Configuration("PatternEnforcer not available".to_string()))?;
+    
+    let response = enforcer.validate_pre_write(request)?;
+    Ok(Json(response))
 }
 
 async fn handle_rules_for_path(
     State(state): State<ServerState>,
     Json(request): Json<RulesForPathRequest>,
-) -> Json<RulesForPathResponse> {
-    match &state.enforcer {
-        Some(enforcer) => {
-            match enforcer.get_rules_for_path(request) {
-                Ok(response) => Json(response),
-                Err(e) => Json(RulesForPathResponse::error(e.to_string())),
-            }
-        }
-        None => Json(RulesForPathResponse::error("PatternEnforcer not available".to_string())),
-    }
+) -> Result<Json<RulesForPathResponse>> {
+    let enforcer = state.enforcer
+        .as_ref()
+        .ok_or_else(|| SynapseError::Configuration("PatternEnforcer not available".to_string()))?;
+    
+    let response = enforcer.get_rules_for_path(request)?;
+    Ok(Json(response))
 }
 
 /// Detailed health check response
@@ -501,7 +468,7 @@ struct ComponentHealth {
 }
 
 #[instrument]
-async fn health_check(State(state): State<ServerState>) -> Json<HealthCheckResponse> {
+async fn health_check(State(state): State<ServerState>) -> Result<Json<HealthCheckResponse>> {
     let start_time = std::time::SystemTime::now();
     
     // Check Neo4j connection
@@ -551,7 +518,7 @@ async fn health_check(State(state): State<ServerState>) -> Json<HealthCheckRespo
         _ => {}
     }
     
-    Json(health_response)
+    Ok(Json(health_response))
 }
 
 async fn check_neo4j_health(graph: &Arc<graph::Graph>) -> ComponentHealth {
