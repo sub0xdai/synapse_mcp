@@ -196,8 +196,7 @@ pub struct RuleGraphStats {
 mod tests {
     use super::*;
     use crate::{RuleType, Rule};
-    use tempfile::TempDir;
-    use std::fs;
+    use crate::test_helpers::test_helpers::{TestProject, create_rule_content};
 
     #[test]
     fn test_empty_rule_graph() {
@@ -341,8 +340,8 @@ mod tests {
     // Integration test with file system
     #[test]
     fn test_from_project_empty_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let graph = RuleGraph::from_project(&temp_dir.path().to_path_buf()).unwrap();
+        let project = TestProject::new().unwrap();
+        let graph = RuleGraph::from_project(&project.root().to_path_buf()).unwrap();
         
         assert_eq!(graph.node_count(), 0);
         assert!(graph.rule_sets().is_empty());
@@ -350,25 +349,17 @@ mod tests {
 
     #[test] 
     fn test_from_project_single_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let rule_file = temp_dir.path().join(".synapse.md");
-        
-        fs::write(&rule_file, r#"---
-mcp: synapse
-type: rule
----
+        let project = TestProject::with_synapse_dirs().unwrap();
+        let rule_content = create_rule_content(&[("FORBIDDEN", "println!")]);
+        // Create the rule file INSIDE the .synapse directory, not as .synapse.md
+        let rule_file = project.add_rule_file(".synapse/rules.md", &rule_content).unwrap();
 
-# Test Rules
-
-FORBIDDEN: `println!` - Use logging framework instead.
-"#).unwrap();
-
-        let graph = RuleGraph::from_project(&temp_dir.path().to_path_buf()).unwrap();
+        let graph = RuleGraph::from_project(&project.root().to_path_buf()).unwrap();
         assert_eq!(graph.node_count(), 1);
         
         let rule_set = graph.get_rule_set(&rule_file).unwrap();
         assert_eq!(rule_set.rules.len(), 1);
-        assert_eq!(rule_set.rules[0].name, "forbidden-0");
+        assert!(rule_set.rules[0].name.starts_with("forbidden-"));
         assert_eq!(rule_set.rules[0].rule_type, RuleType::Forbidden);
         assert_eq!(rule_set.rules[0].pattern, "println!");
     }

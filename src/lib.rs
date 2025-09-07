@@ -12,6 +12,9 @@ pub mod config;
 pub mod auth;
 pub mod ast_analysis;
 
+#[cfg(test)]
+pub mod test_helpers;
+
 
 pub use models::{Node, Edge, NodeType, EdgeType, Rule, RuleSet, RuleNode, CompositeRules, RuleType, CompiledRule, PatternMatcher, Violation};
 pub use error::{SynapseError, Result};
